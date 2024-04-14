@@ -1,6 +1,8 @@
-I've used a lot of high-level languages, I like simple things, I hate C++, and I've been wondering if C can extend dynamic language features in the most concise way and support garbage collection? I stumbled upon inspiration and checked the Internet that no one had ever done, so let's get started.
+# A minimal, transparent, robust dynamic extension for C language that supports GC and is compatible with Json data types
 
-The idea is simple:
+Traditional collectors, such as Boehm, are all made on malloc/realloc/free, because C data structures are unpredictable, there is no special markup in memory, it is difficult to distinguish between pointers and data, such as Boehm GC can only do its best to judge. The high-level language defines a complete set of data structures by itself, prohibits users from directly manipulating memory, and the pointers and data are accurately recorded, which can be theoretically ensured, but it seems too cumbersome for the C language. I've always felt that C++/Rust routines are too ugly, because the low-level language niche is to completely expose the underlying data/memory structure, why make so many concepts? The bottom layer is completely opaque, and it is better to use a high-level language.
+
+So my idea is to find the best compromise, follow the most accurate routine, make a fuss on the pointer, more than ten years of experience, Json types are enough, the root pointer of the Mark and Sweep algorithm is the variables created on the stack in the C language, record their state, and then correctly judge whether it is invalid, the leaf pointer is created on the heap, because the data structure is fixed, it can be easily recursively processed. And it's still essentially C code, the underlying structure is fully exposed, and it's just as performant as C, because it's simple to design, and it's easy to optimize and scale.
 
 1. First define the structure var that stores dynamic variables, for the sake of simplicity, the variable type is simple, referring to the Json standard, null/boolean/number/array/object is sufficient, the use of dynamic variables is to use pointers to allocate memory on the heap, and all dynamic variables are hosted on the pvarroot globally linked list.
 2. Then define the structure ref that stores the stack variable information, the stack variable is the var * variable defined in the C source code, called the reference, and the address of the reference and the address pointing to the dynamic variable are registered through the vdeclare/vassign macro, and registered on the global linked list prefroot.
@@ -10,7 +12,7 @@ The idea is simple:
 
 In order to follow the usage habits of most dynamic languages, the following design guidelines are specified:
 
-1. Be sure to use the macro vdeclare/vassign/var to create dynamic variables, if not necessary, do not directly manipulate the var * pointer, unless you know what you are doing; the free var * pointer does not call refer to register as a reference, which is equivalent to a weak reference, and will be deleted during garbage collection; the unassigned var * pointer (pointing to NULL) will exit abnormally in most functions.
+1. Be sure to use the macro vdeclare/vassign to create dynamic variables, if not necessary, do not directly manipulate the var * pointer, unless you know what you are doing; the free var * pointer does not call refer to register as a reference, which is equivalent to a weak reference, and will be deleted during garbage collection; the unassigned var * pointer (pointing to NULL) will exit abnormally in most functions.
 2. Assign a variable to B variable, the actual pass is the address, in order to save memory, null/true/false are global constants, all the original values of number/string are to create new variables, not to modify the original variables, array/object has another set of functions for addition, deletion and modification.
 3. For exception handling, all unrecoverable errors are executed with the exitif macro to exit the process.
 4. I also forgot to use the latest standard of the C language to what features, anyway, the latest version of GCC is compiled and passed, including the MinGW makefile, other operating systems modify their own.
@@ -21,7 +23,7 @@ In order to follow the usage habits of most dynamic languages, the following des
 |-|-|
 |v|Dynamically typed variables|
 |r|reference|
-|z|zero, zilch, zip, null, see <https://www.englishtrackers.com/english-blog/zero-zilch-zip-nil-nought-nothing-whats-the-difference/>|
+|z|zero, zilch, zip, null, nil, nought, nothing|
 |b|boolean|
 |n|number|
 |s|string|
@@ -46,12 +48,12 @@ Here's a list of functions/macros, along with the syntax of the corresponding co
 |struct var *nnew(double n)||Create the number variable|
 |ndeclare(a, b)|var a = 3.14|ndeclare(a, 3.14)|
 |double nvalue(struct var *pv)||Returns the original value of the number variable|
-|var *snew_s(const char *s, size_t slen)<br>var *snew(const char *sz)||Create a string variable |
+|struct var *snew_s(const char *s, size_t slen)<br>var *snew(const char *sz)||Create a string variable |
 |sdeclare(a, b)|var a = "hello"|sdeclare(a, "hello")|
 |char *svalue(struct var *pv)||Returns the original value of the string variable (pointing to an array of characters ending in 0)|
 |size_t slength(struct var *pv)|a.length()|returns string length|
 |struct var *sconcat(size_t num, ...)|var a = "hi"<br>var b = "all"<br>var c = a + b|sdeclare(a, "hi")<br>sdeclare(b, "all")<br>vdeclare(c, sconcat(2, a, b))|
-|var *anew(size_t num, ...)|var a = [null, true, 3.14, "hello"]|Create an array variable with 0 or more members<br>, vdeclare(a, anew(4, znew(), bnew(true), nnew(3.14), snew("hello")))|
+|struct var *anew(size_t num, ...)|var a = [null, true, 3.14, "hello"]|Create an array variable with 0 or more members<br>, vdeclare(a, anew(4, znew(), bnew(true), nnew(3.14), snew("hello")))|
 |adeclare(a)|var a = []||
 |void aclear(struct var *pv)|v.clear()|empty array|
 |size_t alength(struct var *pv)|v.length()|returns array length|

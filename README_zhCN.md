@@ -1,6 +1,8 @@
-我用过很多高级语言，喜欢简单的东西，讨厌C++，一直在想C语言能不能用最简洁的手段扩充动态语言特性，并且支持垃圾回收呢？偶然迸发出灵感，网上查了查没有人做过，那么开始动手吧。
+# 一个C语言的极简、透明、鲁棒的动态扩展，支持垃圾回收，兼容Json数据类型
 
-思路很简单：
+传统的比如Boehm收集器，都是在malloc/realloc/free上做文章，因为C数据结构是无法预料的，内存里面并没有特殊标记，很难区分指针和数据，比如Boehm GC就只能尽最大能力判断。而高级语言都是自己定义一套完整数据结构，禁止用户直接操作内存，指针和数据都精确记录，就能在理论上确保，但是对C语言来讲似乎又显得太笨重。而C++/Rust那些套路，我从来都感觉太丑陋，因为本来低级语言生态位就是完全暴露底层数据/内存结构，生搬硬造那么多概念干嘛？底层被弄得完全不透明，还不如用高级语言呢。
+
+所以我的想法就是找到最佳折中，沿用最精确的套路，在指针上做文章，十几年的经验，Json那几个类型足够用，标记清除算法的根指针就是C语言里创建在栈上的变量，记录它们的状态，就可以之后正确判断是否失效，叶子指针是在堆上创建的，因为数据结构固定，就能轻松递归处理。而且它本质依旧是C代码，底层结构完全暴露，也和C一样性能，因为设计简单，优化和扩展也很轻松。
 
 1. 首先定义存储动态变量的结构体var，变量类型简单起见，参照Json标准，null/boolean/number/array/object足够用了，动态变量的使用均采用指针指向堆上分配内存的方式，所有动态变量都托管在pvarroot全局链表上。
 2. 然后定义存储栈变量信息的结构体ref，栈变量就是c源代码里定义的var *变量，称之为引用，通过vdeclare/vassign宏登记引用的地址以及指向动态变量的地址，登记在全局链表prefroot上。
@@ -10,7 +12,7 @@
 
 为了遵循大部分动态语言的使用习惯，规定以下的设计准则：
 
-1. 务必用宏vdeclare/vassign/var创建动态变量，如无必要，勿直接操作var *指针，除非你知道自己在做什么；游离在外的var *指针没有调用refer登记为引用的，相当于弱引用，垃圾回收时候会被删除；未分配的var *指针（指向NULL）在大部分函数里都会异常退出。
+1. 务必用宏vdeclare/vassign创建动态变量，如无必要，勿直接操作var *指针，除非你知道自己在做什么；游离在外的var *指针没有调用refer登记为引用的，相当于弱引用，垃圾回收时候会被删除；未分配的var *指针（指向NULL）在大部分函数里都会异常退出。
 2. 将a变量赋值给b变量，实际传递的是地址；为了节省内存，null/true/false都是全局常量；所有赋number/string原始值的，都是创建新变量，而非修改原变量；array/object另有一套增删改的函数。
 3. 对于异常处理，所有无法恢复的错误均执行exitif宏退出进程。
 4. 我也忘了使用到C语言最新标准的什么特性，反正最新版本GCC编译通过就是了，包含MinGW的makefile，别的操作系统自行修改。
@@ -21,7 +23,7 @@
 |-|-|
 |v|动态类型的变量|
 |r|引用|
-|z|zero、zilch、zip，表示null，参见<https://www.englishtrackers.com/english-blog/zero-zilch-zip-nil-nought-nothing-whats-the-difference/>|
+|z|zero、zilch、zip，表示null、nil、nought、nothing|
 |b|boolean|
 |n|number|
 |s|string|
@@ -46,12 +48,12 @@
 |struct var *nnew(double n)||创建number变量|
 |ndeclare(a, b)|var a = 3.14|ndeclare(a, 3.14)|
 |double nvalue(struct var *pv)||返回number变量的原始值|
-|var *snew_s(const char *s, size_t slen)<br>var *snew(const char *sz)||创建string变量|
+|struct var *snew_s(const char *s, size_t slen)<br>var *snew(const char *sz)||创建string变量|
 |sdeclare(a, b)|var a = "hello"|sdeclare(a, "hello")|
 |char *svalue(struct var *pv)||返回string变量的原始值（指向\0结尾的字符数组）|
 |size_t slength(struct var *pv)|a.length()|返回字符串长度|
 |struct var *sconcat(size_t num, ...)|var a = "hi"<br>var b = "all"<br>var c = a + b|sdeclare(a, "hi")<br>sdeclare(b, "all")<br>vdeclare(c, sconcat(2, a, b))|
-|var *anew(size_t num, ...)|var a = [null, true, 3.14, "hello"]|创建包含0个或多个成员的array变量<br>vdeclare(a, anew(4, znew(), bnew(true), nnew(3.14), snew("hello")))|
+|struct var *anew(size_t num, ...)|var a = [null, true, 3.14, "hello"]|创建包含0个或多个成员的array变量<br>vdeclare(a, anew(4, znew(), bnew(true), nnew(3.14), snew("hello")))|
 |adeclare(a)|var a = []||
 |void aclear(struct var *pv)|v.clear()|清空数组|
 |size_t alength(struct var *pv)|v.length()|返回数组长度|

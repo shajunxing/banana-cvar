@@ -71,7 +71,7 @@ void vdump(const char *prefix, const struct var *pv) {
         printf("b %s", pv->bvalue ? "true" : "false");
         break;
     case vtnumber:
-        printf("n %lf", pv->nvalue);
+        printf("n %lg", pv->nvalue);
         break;
     case vtstring:
         printf("s %d,%d \"%s\"", (pv->svalue).capacity, (pv->svalue).length, (pv->svalue).address);
@@ -266,6 +266,11 @@ struct var *vnew() {
         pv->next->prev = pv;
     }
     return pv;
+}
+
+enum vtype vtype(struct var *pv) {
+    exitif(pv == NULL, EINVAL);
+    return pv->type;
 }
 
 // 新建null，实际上并不新建

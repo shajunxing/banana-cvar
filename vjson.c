@@ -22,7 +22,7 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
         break;
     case vtnumber:
         memset(buff, 0, sizeof buff);
-        snprintf(buff, sizeof buff, "%lf", pv->nvalue);
+        snprintf(buff, sizeof buff, "%lg", pv->nvalue);
         sbappend(psb, buff);
         break;
     case vtstring:

@@ -62,3 +62,48 @@ struct var *aget(struct var *pv, size_t idx) {
     exitif(pv->type != vtarray, EINVAL);
     return vbget(&(pv->avalue), idx);
 }
+
+static int acomp_default(const struct var *pv1, const struct var *pv2) {
+    exitif(pv1 == NULL, EINVAL);
+    exitif(pv2 == NULL, EINVAL);
+    if (pv1 == pv2) {
+        return 0;
+    }
+    int typediff = pv1->type - pv2->type;
+    if (0 != typediff) {
+        return typediff;
+    }
+    switch (pv1->type) {
+    case vtnull:
+        return 0;
+    case vtboolean:
+        return pv1->bvalue - pv2->bvalue;
+    case vtnumber:
+        return (int)(pv1->nvalue - pv2->nvalue);
+    case vtstring:
+        // 把\0包含进比较里
+        // 参见 https://stackoverflow.com/questions/36518931/what-does-strcmp-return-if-two-similar-strings-are-of-different-lengths
+        return memcmp((pv1->svalue).address, (pv2->svalue).address, min((pv1->svalue).length, (pv1->svalue).length) + 1);
+    case vtarray:
+        return (pv1->avalue).length - (pv2->avalue).length;
+    case vtobject:
+        return (pv1->ovalue).length - (pv2->ovalue).length;
+    }
+    return 0;
+}
+
+static int acomp_relay(void *ctx, const void *e1, const void *e2) {
+    acomp_t comp = (acomp_t)ctx;
+    const struct var *pv1 = *((const struct var **)e1);
+    const struct var *pv2 = *((const struct var **)e2);
+    return comp(pv1, pv2);
+}
+
+void asort(struct var *pv, acomp_t comp) {
+    exitif(pv == NULL, EINVAL);
+    exitif(pv->type != vtarray, EINVAL);
+    if (NULL == comp) {
+        comp = acomp_default;
+    }
+    qsort_s(pv->avalue.address, pv->avalue.length, sizeof(struct var *), acomp_relay, comp);
+}

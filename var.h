@@ -90,6 +90,16 @@ You should have received a copy of the GNU General Public License along with thi
     newnum;                                                            \
 })
 
+#define auto __auto_type
+#define max(a, b) \
+    ({ auto __a = (a); \
+       auto __b = (b); \
+     __a > __b ? __a : __b; })
+#define min(a, b) \
+    ({ auto __a = (a); \
+       auto __b = (b); \
+     __a < __b ? __a : __b; })
+
 // 字符串buffer类型，与通用buffer类型有区别
 struct stringbuffer {
     char *address;
@@ -231,6 +241,7 @@ struct ref {
 #define str(a) #a
 #define xstr(a) str(a)
 
+shared void vdump(const char *prefix, const struct var *pv);
 shared void wdump(const char *suffix);
 #define dump() wdump(__FILE__ "(" xstr(__LINE__) ")")
 
@@ -246,6 +257,7 @@ shared void refer(struct var **ppv, char *descr, struct var *pval);
     vassign(a, b)
 
 struct var *vnew();
+shared enum vtype vtype(struct var *pv);
 
 shared struct var *znew();
 #define zdeclare(a) vdeclare(a, znew())
@@ -273,6 +285,8 @@ shared void apush(struct var *pv, struct var *pval);
 shared struct var *apop(struct var *pv);
 shared void aput(struct var *pv, size_t idx, struct var *pval);
 shared struct var *aget(struct var *pv, size_t idx);
+typedef int (*acomp_t)(const struct var *, const struct var *);
+shared void asort(struct var *pv, acomp_t comp);
 
 shared struct var *onew();
 #define odeclare(a) vdeclare(a, onew())

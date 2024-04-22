@@ -10,9 +10,83 @@ You should have received a copy of the GNU General Public License along with thi
 
 #include "var.h"
 
+#include <backtrace.h>
+#include <backtrace-supported.h>
+
+static struct backtrace_state *bt_state = NULL;
+
+// 參考backtrace_print源代码，error_callback如果不设置会导致release版本segment fault
+static void btcb_error(void *data, const char *msg, int errnum) {
+    if (errnum > 0) {
+        fprintf(stderr, "%s (%d,%s)\n", msg, errnum, strerror(errnum));
+    } else {
+        fprintf(stderr, "%s\n", msg);
+    }
+}
+
+static int btcb_full(void *data, uintptr_t pc, const char *filename, int lineno, const char *function) {
+    fprintf(stderr, "%s,%d %s\n", filename ?: "?", lineno, function ?: "?");
+    return 0;
+}
+
+static void btcb_syminfo(void *data, uintptr_t pc, const char *symname, uintptr_t symval, uintptr_t symsize) {
+    fprintf(stderr, "%s %p %d\n", symname, symval, symsize);
+}
+
+static int btcb_simple(void *data, uintptr_t pc) {
+    fprintf(stderr, "\t%p ", pc);
+    backtrace_pcinfo(bt_state, pc, btcb_full, btcb_error, NULL);
+    // backtrace_syminfo(bt_state, pc, btcb_syminfo, btcb_error, NULL);
+    return 0;
+}
+
+void stacktrace() {
+    if (!bt_state) {
+        bt_state = backtrace_create_state(NULL, BACKTRACE_SUPPORTS_THREADS, btcb_error, NULL);
+    };
+    backtrace_simple(bt_state, 1, btcb_simple, btcb_error, NULL);
+    fprintf(stderr, "\n");
+}
+
+// 安全释放内存，并置NULL
+void free_s(void **pp) {
+    exitif(pp == NULL, EINVAL);
+    if (*pp) {
+        free(*pp);
+        *pp = NULL;
+    }
+}
+
+// 安全分配/重新分配内存，新分配空间置0
+// size_t alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz)
+// 约定*pp和oldlen初始值都必须为NULL/0，才能正确运行
+// 参考 https://stackoverflow.com/questions/2141277/how-to-zero-out-new-memory-after-realloc
+// 注意memset里面void *类型的加法操作结果异常，经测试是会把加数放大16倍，单写程序却无法复现，经查void *类型的算术运算是非法的，参见 https://stackoverflow.com/questions/3523145/pointer-arithmetic-for-void-pointer-in-c
+void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
+    exitif(pp == NULL, EINVAL);
+    exitif((*pp != NULL) && (oldnum == 0), EINVAL);
+    exitif((*pp == NULL) && (oldnum > 0), EINVAL);
+    exitif(sz == 0, EINVAL);
+    size_t oldsize = oldnum * sz;
+    size_t newsize = newnum * sz;
+    if (newsize > 0) {
+        if (*pp) {
+            *pp = realloc(*pp, newsize);
+        } else {
+            *pp = malloc(newsize);
+        }
+        exitif(*pp == NULL, ENOMEM);
+        if (newsize > oldsize) {
+            memset((char *)*pp + oldsize, 0, newsize - oldsize);
+        }
+    } else {
+        free_s(pp);
+    }
+}
+
 void sbclear(struct stringbuffer *psb) {
     exitif(psb == NULL, EINVAL);
-    safefree(&(psb->address));
+    free_s((void **)&(psb->address));
     psb->capacity = 0;
     psb->length = 0;
 }
@@ -27,7 +101,8 @@ void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen) {
         newcap = newcap == 0 ? 1 : newcap << 1;
         exitif(newcap == 0, ERANGE);
     }
-    psb->capacity = safealloc(&(psb->address), psb->capacity, newcap, 1);
+    alloc_s((void **)&(psb->address), psb->capacity, newcap, 1);
+    psb->capacity = newcap;
     memcpy(psb->address + psb->length, s, slen);
     psb->length = newlen;
 }
@@ -51,9 +126,9 @@ generic_buffer_find_function_definition(varbuffer, vb, struct var *);
 
 // 全局变量取名尽量不用缩写，以便与函数内参数名区分
 // 以链表方式存储，如果用数组方式，gc收缩数组还需要修改pointer地址，太麻烦
-static struct var *pvarroot = NULL;
+static __thread struct var *pvarroot = NULL;
 // 也以链表方式存储，不会太多，无需优化
-static struct ref *prefroot = NULL;
+static __thread struct ref *prefroot = NULL;
 
 // null/true/false共用一个值以节省内存，共用值不挂在链表上
 static const struct var varnull = {.inuse = true, .type = vtnull};
@@ -182,7 +257,7 @@ void gc() {
                 pr->next->prev = pr->prev;
             }
             pr = pr->next;
-            safefree(&p);
+            free_s((void **)&p);
         }
     }
     // 将所有inuse置0
@@ -220,7 +295,7 @@ void gc() {
                 pv->next->prev = pv->prev;
             }
             pv = pv->next;
-            safefree(&p);
+            free_s((void **)&p);
         }
     }
 }
@@ -241,7 +316,7 @@ void refer(struct var **ppv, char *descr, struct var *pval) {
         }
     }
     if (!pr) {
-        safealloc(&pr, 0, 1, sizeof(struct ref));
+        alloc_s((void **)&pr, 0, 1, sizeof(struct ref));
         pr->addr = ppv;
         pr->next = prefroot;
         prefroot = pr;
@@ -259,7 +334,7 @@ void refer(struct var **ppv, char *descr, struct var *pval) {
 // var一旦创建，禁止修改（object和array也是创建新的，但是其中的修改有对应操作）
 struct var *vnew() {
     struct var *pv = NULL;
-    safealloc(&pv, 0, 1, sizeof(struct var));
+    alloc_s((void **)&pv, 0, 1, sizeof(struct var));
     pv->next = pvarroot;
     pvarroot = pv;
     if (pv->next) {

@@ -108,7 +108,7 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
         } while (newcap < reqcap);
         // 重新哈希
         generic_buffer_variable_declaration(objnodebuffer, newoval);
-        safealloc(&(newoval.address), 0, newcap, sizeof(struct objnode));
+        alloc_s((void **)&(newoval.address), 0, newcap, sizeof(struct objnode));
         newoval.capacity = newcap;
         for (size_t i = 0; i < (pv->ovalue).capacity; i++) {
             struct objnode node = (pv->ovalue).address[i];
@@ -149,4 +149,17 @@ struct var *oget_s(struct var *pv, const char *key, size_t klen) {
 
 struct var *oget(struct var *pv, const char *key) {
     return oget_s(pv, key, strlen(key));
+}
+
+void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v)) {
+    exitif(obj == NULL, EINVAL);
+    exitif(obj->type != vtobject, EINVAL);
+    for (size_t _i = 0; _i < (obj->ovalue).capacity; _i++) {
+        char *k = (obj->ovalue).address[_i].key.address;
+        size_t klen = (obj->ovalue).address[_i].key.length;
+        struct var *v = (obj->ovalue).address[_i].value;
+        if (k) {
+            cb(k, klen, v);
+        }
+    }
 }

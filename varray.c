@@ -93,17 +93,26 @@ static int acomp_default(const struct var *pv1, const struct var *pv2) {
 }
 
 static int acomp_relay(void *ctx, const void *e1, const void *e2) {
-    acomp_t comp = (acomp_t)ctx;
+    int (*comp)(const struct var *, const struct var *) = (int (*)(const struct var *, const struct var *))ctx;
     const struct var *pv1 = *((const struct var **)e1);
     const struct var *pv2 = *((const struct var **)e2);
     return comp(pv1, pv2);
 }
 
-void asort(struct var *pv, acomp_t comp) {
+void asort(struct var *pv, int (*comp)(const struct var *, const struct var *)) {
     exitif(pv == NULL, EINVAL);
     exitif(pv->type != vtarray, EINVAL);
     if (NULL == comp) {
         comp = acomp_default;
     }
     qsort_s(pv->avalue.address, pv->avalue.length, sizeof(struct var *), acomp_relay, comp);
+}
+
+void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v)) {
+    exitif(arr == NULL, EINVAL);
+    exitif(arr->type != vtarray, EINVAL);
+    for (size_t i = 0; i < (arr->avalue).length; i++) {
+        struct var *v = (arr->avalue).address[i];
+        cb(i, v);
+    }
 }

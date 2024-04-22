@@ -38,67 +38,58 @@ You should have received a copy of the GNU General Public License along with thi
     #define shared
 #endif
 
-#define exitif(cond, errnum)                         \
-    do {                                             \
-        if (cond) {                                  \
-            fprintf(stderr, "%s, %s(%d) %s(): %s\n", \
-                    strerror(errnum),                \
-                    __FILE__, __LINE__, __func__,    \
-                    #cond);                          \
-            exit(errnum);                            \
-        }                                            \
-    } while (0)
+#define str(a) #a
+#define xstr(a) str(a)
 
-// 安全分配/重新分配内存，新分配空间置0，出错退出程序，注意必须用宏，否则错误信息看不到发生的位置
-// size_t safealloc(void **pp, size_t oldnum, size_t newnum, size_t sz)
-// 约定*pp和oldlen初始值都必须为NULL/0，才能正确运行
-// 参考 https://stackoverflow.com/questions/2141277/how-to-zero-out-new-memory-after-realloc
-#define safefree(pp)                  \
-    do {                              \
-        void **__pp = (void **)(pp);  \
-        exitif(__pp == NULL, EINVAL); \
-        if (*__pp) {                  \
-            free(*__pp);              \
-            *__pp = NULL;             \
-        }                             \
-    } while (0)
-// 注意memset里面void *类型的加法操作结果异常，经测试是会把加数放大16倍，单写程序却无法复现，经查void *类型的算术运算是非法的，参见 https://stackoverflow.com/questions/3523145/pointer-arithmetic-for-void-pointer-in-c
-#define safealloc(pp, oldnum, newnum, sz) ({                           \
-    void **__pp = (void **)(pp);                                       \
-    size_t __oldnum = oldnum;                                          \
-    size_t __newnum = newnum;                                          \
-    size_t __sz = sz;                                                  \
-    exitif(__pp == NULL, EINVAL);                                      \
-    exitif((*__pp != NULL) && (__oldnum == 0), EINVAL);                \
-    exitif((*__pp == NULL) && (__oldnum > 0), EINVAL);                 \
-    exitif(__sz == 0, EINVAL);                                         \
-    size_t __oldsize = __oldnum * __sz;                                \
-    size_t __newsize = __newnum * __sz;                                \
-    if (__newsize > 0) {                                               \
-        if (*pp) {                                                     \
-            *pp = realloc(*pp, __newsize);                             \
-        } else {                                                       \
-            *pp = malloc(__newsize);                                   \
-        }                                                              \
-        exitif(*pp == NULL, ENOMEM);                                   \
-        if (__newsize > __oldsize) {                                   \
-            memset((char *)*pp + __oldsize, 0, __newsize - __oldsize); \
-        }                                                              \
-    } else {                                                           \
-        safefree(pp);                                                  \
-    }                                                                  \
-    newnum;                                                            \
-})
+#define lambda(ret, args, body) ({ ret f args body &f; })
 
-#define auto __auto_type
 #define max(a, b) \
-    ({ auto __a = (a); \
-       auto __b = (b); \
-     __a > __b ? __a : __b; })
+    ({ __auto_type _a = (a); \
+       __auto_type _b = (b); \
+     _a > _b ? _a : _b; })
 #define min(a, b) \
-    ({ auto __a = (a); \
-       auto __b = (b); \
-     __a < __b ? __a : __b; })
+    ({ __auto_type _a = (a); \
+       __auto_type _b = (b); \
+     _a < _b ? _a : _b; })
+
+shared void stacktrace();
+
+// 参考 https://stackoverflow.com/questions/55417186/is-this-a-valid-way-of-checking-if-a-variadic-macro-argument-list-is-empty
+#define is_empty(...) (sizeof((char[]){#__VA_ARGS__}) == 1)
+// 参考 https://stackoverflow.com/questions/27049491/can-c-c-preprocessor-macros-have-default-parameter-values
+#define first_arg(a, ...) a
+#define arg_default(a, ...) first_arg(__VA_ARGS__ __VA_OPT__(, ) a) // 确保errno = 后面始终有个值，否则语法错误
+
+// 如果cond为真则退出程序，可选参数为errno，如无则保留当前值不变
+#define exitif(cond, ...)                                                         \
+    do {                                                                          \
+        if (cond) {                                                               \
+            if (!is_empty(__VA_ARGS__)) {                                         \
+                errno = arg_default(0, __VA_ARGS__);                              \
+            }                                                                     \
+            fprintf(stderr, "%s,%d %s: \"%s\" %s, exit(%d)\n",                    \
+                    __FILE__, __LINE__, __func__, #cond, strerror(errno), errno); \
+            stacktrace();                                                         \
+            exit(errno);                                                          \
+        }                                                                         \
+    } while (0)
+
+// 如果cond为真则函数返回，可选参数为errno，如无则保留当前值不变
+// 统一约定需要判断成功/失败的函数，返回类型为errno_t，0为成功，其它值为错误码
+#define returnif(cond, ...)                                                       \
+    do {                                                                          \
+        if (cond) {                                                               \
+            if (!is_empty(__VA_ARGS__)) {                                         \
+                errno = arg_default(0, __VA_ARGS__);                              \
+            }                                                                     \
+            fprintf(stderr, "%s,%d %s: \"%s\" %s, return %d\n",                   \
+                    __FILE__, __LINE__, __func__, #cond, strerror(errno), errno); \
+            return errno;                                                         \
+        }                                                                         \
+    } while (0)
+
+shared void free_s(void **pp);
+shared void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz);
 
 // 字符串buffer类型，与通用buffer类型有区别
 struct stringbuffer {
@@ -125,24 +116,25 @@ void sbdump(struct stringbuffer *psb);
 #define generic_buffer_clear_function_definition(sname, fnprefix) \
     generic_buffer_clear_function_declaration(sname, fnprefix) {  \
         exitif(pb == NULL, EINVAL);                               \
-        safefree(&(pb->address));                                 \
+        free_s((void **)&(pb->address));                          \
         pb->capacity = 0;                                         \
         pb->length = 0;                                           \
     }
 #define generic_buffer_push_function_declaration(sname, fnprefix, type) \
     void fnprefix##push(struct sname *pb, type v)
-#define generic_buffer_push_function_definition(sname, fnprefix, type)                \
-    generic_buffer_push_function_declaration(sname, fnprefix, type) {                 \
-        exitif(pb == NULL, EINVAL);                                                   \
-        size_t newlen = pb->length + 1;                                               \
-        size_t newcap = pb->capacity;                                                 \
-        while (newcap < newlen) {                                                     \
-            newcap = newcap == 0 ? 1 : newcap << 1;                                   \
-            exitif(newcap == 0, ERANGE);                                              \
-        }                                                                             \
-        pb->capacity = safealloc(&(pb->address), pb->capacity, newcap, sizeof(type)); \
-        (pb->address)[pb->length] = v;                                                \
-        pb->length = newlen;                                                          \
+#define generic_buffer_push_function_definition(sname, fnprefix, type)        \
+    generic_buffer_push_function_declaration(sname, fnprefix, type) {         \
+        exitif(pb == NULL, EINVAL);                                           \
+        size_t newlen = pb->length + 1;                                       \
+        size_t newcap = pb->capacity;                                         \
+        while (newcap < newlen) {                                             \
+            newcap = newcap == 0 ? 1 : newcap << 1;                           \
+            exitif(newcap == 0, ERANGE);                                      \
+        }                                                                     \
+        alloc_s((void **)&(pb->address), pb->capacity, newcap, sizeof(type)); \
+        pb->capacity = newcap;                                                \
+        (pb->address)[pb->length] = v;                                        \
+        pb->length = newlen;                                                  \
     }
 #define generic_buffer_pop_function_declaration(sname, fnprefix, type) \
     type fnprefix##pop(struct sname *pb)
@@ -238,9 +230,6 @@ struct ref {
     struct ref *next;
 };
 
-#define str(a) #a
-#define xstr(a) str(a)
-
 shared void vdump(const char *prefix, const struct var *pv);
 shared void wdump(const char *suffix);
 #define dump() wdump(__FILE__ "(" xstr(__LINE__) ")")
@@ -249,9 +238,15 @@ shared void gc();
 
 shared void refer(struct var **ppv, char *descr, struct var *pval);
 // a = b
-#define vassign(a, b) refer(&(a), __FILE__ "," xstr(__LINE__) "," str(a), (b))
-// var a = null
 // 注意GCC里的__func__ __FUNCTION__ __PRETTY_FUNCTION__是变量名不是字面量，无法用在宏里面字符串连接
+// 注意side effect，b如果是表达式避免执行两次
+#define vassign(a, b)                                            \
+    do {                                                         \
+        struct var *_b = (b);                                    \
+        exitif(_b == NULL, EINVAL);                              \
+        refer(&(a), __FILE__ "," xstr(__LINE__) "," str(a), _b); \
+    } while (0)
+// var a = b
 #define vdeclare(a, b)    \
     struct var *a = NULL; \
     vassign(a, b)
@@ -261,41 +256,70 @@ shared enum vtype vtype(struct var *pv);
 
 shared struct var *znew();
 #define zdeclare(a) vdeclare(a, znew())
+#define zassign(a) vassign(a, znew())
 
 shared struct var *bnew(bool b);
 #define bdeclare(a, b) vdeclare(a, bnew(b))
+#define bassign(a, b) vassign(a, bnew(b))
 shared bool bvalue(struct var *pv);
 
 shared struct var *nnew(double n);
 #define ndeclare(a, b) vdeclare(a, nnew(b))
+#define nassign(a, b) vassign(a, nnew(b))
 shared double nvalue(struct var *pv);
 
 shared struct var *snew_s(const char *s, size_t slen);
 shared struct var *snew(const char *sz);
 #define sdeclare(a, b) vdeclare(a, snew(b))
+#define sassign(a, b) vassign(a, snew(b))
 shared char *svalue(struct var *pv);
 shared size_t slength(struct var *pv);
 shared struct var *sconcat(size_t num, ...);
 
 shared struct var *anew(size_t num, ...);
 #define adeclare(a) vdeclare(a, anew(0))
+#define aassign(a) vassign(a, anew(0))
 shared void aclear(struct var *pv);
 shared size_t alength(struct var *pv);
 shared void apush(struct var *pv, struct var *pval);
 shared struct var *apop(struct var *pv);
 shared void aput(struct var *pv, size_t idx, struct var *pval);
 shared struct var *aget(struct var *pv, size_t idx);
-typedef int (*acomp_t)(const struct var *, const struct var *);
-shared void asort(struct var *pv, acomp_t comp);
+shared void asort(struct var *pv, int (*comp)(const struct var *, const struct var *));
+shared void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v));
+// #define aforeach(i, v, arr, stmt)                           \
+//     do {                                                    \
+//         exitif(arr == NULL, EINVAL);                        \
+//         exitif(arr->type != vtarray, EINVAL);               \
+//         for (size_t i = 0; i < (arr->avalue).length; i++) { \
+//             struct var *v = (arr->avalue).address[i];       \
+//             stmt;                                           \
+//         }                                                   \
+//     } while (0)
 
 shared struct var *onew();
 #define odeclare(a) vdeclare(a, onew())
+#define oassign(a) vassign(a, onew())
 shared void oclear(struct var *pv);
 shared size_t olength(struct var *pv);
 shared void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval);
 shared void oput(struct var *pv, const char *key, struct var *pval);
 shared struct var *oget_s(struct var *pv, const char *key, size_t klen);
 shared struct var *oget(struct var *pv, const char *key);
+shared void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v));
+// #define oforeach(k, klen, v, obj, stmt)                          \
+//     do {                                                         \
+//         exitif(obj == NULL, EINVAL);                             \
+//         exitif(obj->type != vtobject, EINVAL);                   \
+//         for (size_t _i = 0; _i < (obj->ovalue).capacity; _i++) { \
+//             char *k = (obj->ovalue).address[_i].key.address;     \
+//             size_t klen = (obj->ovalue).address[_i].key.length;  \
+//             struct var *v = (obj->ovalue).address[_i].value;     \
+//             if (k) {                                             \
+//                 stmt;                                            \
+//             }                                                    \
+//         }                                                        \
+//     } while (0)
 
 shared struct var *vtojson(struct var *pv);
 #define tojson(pv) svalue(vtojson(pv))

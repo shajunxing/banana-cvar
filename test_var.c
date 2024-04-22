@@ -132,16 +132,60 @@ void test_gc() {
     }
 }
 
+void test_asort() {
+    adeclare(a);
+    odeclare(b);
+    oput(b, "1st", bnew(true));
+    oput(b, "2nd", bnew(false));
+    apush(a, b);
+    odeclare(c);
+    oput(c, "3nd", nnew(3.14));
+    apush(a, c);
+    apush(a, anew(2, bnew(true), bnew(false)));
+    apush(a, anew(1, nnew(2.718)));
+    apush(a, snew("Hi"));
+    apush(a, nnew(0));
+    apush(a, bnew(true));
+    apush(a, bnew(false));
+    apush(a, znew());
+    puts(tojson(a));
+    asort(a, NULL);
+    puts(tojson(a));
+}
+
+void test_foreach() {
+    vdeclare(arr, anew(6, znew(), bnew(true), nnew(3.14), snew("hello"), anew(0), onew()));
+    aforeach(arr, lambda(void, (size_t i, struct var * v), {
+                 printf("%d\t%s\n", i, tojson(v));
+             }));
+    odeclare(obj);
+    oput(obj, "1st", znew());
+    oput(obj, "2nd", bnew(false));
+    oput(obj, "3rd", nnew(2.718));
+    oput(obj, "4th", arr);
+    oforeach(obj, lambda(void, (const char *k, size_t klen, struct var *v), {
+                 printf("%s,%d\t%s\n", k, klen, tojson(v));
+             }));
+}
+
 int main() {
-    setlocale(LC_ALL, ".UTF-8");
+    // setlocale(LC_ALL, ".UTF-8");
     // vdeclare(b, test1());
     // dump(); // 可以看到函数退出后原先栈内的变量值变化了
-    // vdeclare(a, nnew(10));
+    // ndeclare(a, 10);
     // vassign(b, nnew(20));
     // dump();
     // vassign(a, nnew(nvalue(a) + nvalue(b)));
     // dump();
-    // vassign(a, NULL);
-    printf(tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))));
+    // zassign(a);
+    // bassign(a, true);
+    // nassign(a, 3.14);
+    // sassign(a, "foo");
+    // oassign(a);
+    // aassign(a);
+    // printf("%s\n", tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))));
+    // gc();
+    // dump();
+    test_foreach();
     return 0;
 }

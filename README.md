@@ -18,8 +18,8 @@ Optional prefix + name + optional suffix, the meaning of the prefix is as follow
 
 |prefix|description|
 |-|-|
-Dynamically typed variables|v|
-|r|citation|
+|v|dynamically typed variables|
+|r|reference|
 |z|zero, zilch, zip, which represent null, nil, nought, nothing|
 |b|boolean|
 |n|number|
@@ -101,6 +101,7 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |char *svalue(struct var *pv)||Returns the original value of the string variable (pointing to an array of characters ending in 0)|
 |size_t slength(struct var *pv)|a.length()|returns string length|
 |struct var *sconcat(size_t num, ...)|var a = "hi" <br>var b = "all" <br>var c = a + b|concatenate one or more <br>strings sdeclare(a, "hi")<br>sdeclare(b, "all")<br>vdeclare(c, sconcat(2, a, b))|
+|struct var *sformat(const char *fmt, ...)||Return the formatted string, with the same parameters as printf|
 
 ## Arrays
 

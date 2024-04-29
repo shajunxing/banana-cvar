@@ -27,20 +27,20 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
         break;
     case vtstring:
         sbappend(psb, "\"");
-        sbappend_s(psb, (pv->svalue).address, (pv->svalue).length);
+        sbappend_s(psb, (pv->svalue).base, (pv->svalue).length);
         sbappend(psb, "\"");
         break;
     case vtarray:
         sbappend(psb, "[");
         for (size_t i = 0; i < (pv->avalue).length; i++) {
             // 防止套娃
-            if (vbfind(pvb, (pv->avalue).address[i]) > -1) {
+            if (vbfind(pvb, (pv->avalue).base[i]) > -1) {
                 continue;
             }
             if (i > 0) {
                 sbappend(psb, ",");
             }
-            toj(psb, pvb, (pv->avalue).address[i]);
+            toj(psb, pvb, (pv->avalue).base[i]);
         }
         sbappend(psb, "]");
         break;
@@ -48,11 +48,11 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
         sbappend(psb, "{");
         size_t j = 0;
         for (size_t i = 0; i < (pv->ovalue).capacity; i++) {
-            if ((pv->ovalue).address[i].key.address == NULL) {
+            if ((pv->ovalue).base[i].key.base == NULL) {
                 continue;
             }
             // 防止套娃
-            if (vbfind(pvb, (pv->ovalue).address[i].value) > -1) {
+            if (vbfind(pvb, (pv->ovalue).base[i].value) > -1) {
                 continue;
             }
             if (j > 0) {
@@ -60,9 +60,9 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
             }
             j++;
             sbappend(psb, "\"");
-            sbappend_s(psb, (pv->ovalue).address[i].key.address, (pv->ovalue).address[i].key.length);
+            sbappend_s(psb, (pv->ovalue).base[i].key.base, (pv->ovalue).base[i].key.length);
             sbappend(psb, "\":");
-            toj(psb, pvb, (pv->ovalue).address[i].value);
+            toj(psb, pvb, (pv->ovalue).base[i].value);
         }
         sbappend(psb, "}");
         break;
@@ -74,7 +74,7 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
 struct var *vtojson(struct var *pv) {
     exitif(pv == NULL, EINVAL);
     sbdeclare(sb);
-    generic_buffer_variable_declaration(varbuffer, vb);
+    struct varbuffer vb = {NULL, 0, 0};
     toj(&sb, &vb, pv);
     vbclear(&vb);
     struct var *ps = vnew();

@@ -15,8 +15,8 @@ clean:
 
 # 注意-lbacktrace要放在最后面
 # 参考 https://stackoverflow.com/questions/11893996/why-does-the-order-of-l-option-in-gcc-matter
-var.dll: var.h var.c vstring.c varray.c vobject.c vjson.c
-    $(CC) -shared -D DLL -D EXPORT -o var.dll var.c vstring.c varray.c vobject.c vjson.c -lbacktrace
+var.dll: var.h var.c vbuffer.c vstring.c varray.c vobject.c vjson.c
+    $(CC) -shared -D DLL -D EXPORT -o var.dll var.c vbuffer.c vstring.c varray.c vobject.c vjson.c -lbacktrace
 
 test_call_stack.exe: test_call_stack.c
     $(CC) -o test_call_stack.exe test_call_stack.c

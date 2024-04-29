@@ -29,7 +29,7 @@ struct var *snew(const char *sz) {
 char *svalue(struct var *pv) {
     exitif(pv == NULL, EINVAL);
     exitif(pv->type != vtstring, EINVAL);
-    return (pv->svalue).address;
+    return (pv->svalue).base;
 }
 
 size_t slength(struct var *pv) {
@@ -46,8 +46,21 @@ struct var *sconcat(size_t num, ...) {
     for (size_t i = 0; i < num; i++) {
         struct var *p = va_arg(args, struct var *);
         exitif(p == NULL, EINVAL);
-        sbappend_s(&(pv->svalue), (p->svalue).address, (p->svalue).length);
+        sbappend_s(&(pv->svalue), (p->svalue).base, (p->svalue).length);
     }
     va_end(args);
+    return pv;
+}
+
+struct var *sformat(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char *s = NULL;
+    int slen = vasprintf(&s, fmt, args);
+    va_end(args);
+    struct var *pv = vnew();
+    pv->type = vtstring;
+    sbappend_s(&(pv->svalue), s, slen);
+    free_s(&s);
     return pv;
 }

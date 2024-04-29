@@ -11,6 +11,8 @@ You should have received a copy of the GNU General Public License along with thi
 #ifndef VAR_H
 #define VAR_H
 
+// 比如vasprintf就需要声明_GNU_SOURCE
+#define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -40,7 +42,7 @@ You should have received a copy of the GNU General Public License along with thi
 
 #define str(a) #a
 #define xstr(a) str(a)
-
+#define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define lambda(ret, args, body) ({ ret f args body &f; })
 
 #define max(a, b) \
@@ -52,7 +54,8 @@ You should have received a copy of the GNU General Public License along with thi
        __auto_type _b = (b); \
      _a < _b ? _a : _b; })
 
-shared void stacktrace();
+#define logerror(format, ...) \
+    fprintf(stderr, "%s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 
 // 参考 https://stackoverflow.com/questions/55417186/is-this-a-valid-way-of-checking-if-a-variadic-macro-argument-list-is-empty
 #define is_empty(...) (sizeof((char[]){#__VA_ARGS__}) == 1)
@@ -60,40 +63,50 @@ shared void stacktrace();
 #define first_arg(a, ...) a
 #define arg_default(a, ...) first_arg(__VA_ARGS__ __VA_OPT__(, ) a) // 确保errno = 后面始终有个值，否则语法错误
 
-// 如果cond为真则退出程序，可选参数为errno，如无则保留当前值不变
-#define exitif(cond, ...)                                                         \
-    do {                                                                          \
-        if (cond) {                                                               \
-            if (!is_empty(__VA_ARGS__)) {                                         \
-                errno = arg_default(0, __VA_ARGS__);                              \
-            }                                                                     \
-            fprintf(stderr, "%s,%d %s: \"%s\" %s, exit(%d)\n",                    \
-                    __FILE__, __LINE__, __func__, #cond, strerror(errno), errno); \
-            stacktrace();                                                         \
-            exit(errno);                                                          \
-        }                                                                         \
-    } while (0)
+shared void stacktrace();
 
-// 如果cond为真则函数返回，可选参数为errno，如无则保留当前值不变
-// 统一约定需要判断成功/失败的函数，返回类型为errno_t，0为成功，其它值为错误码
-#define returnif(cond, ...)                                                       \
-    do {                                                                          \
-        if (cond) {                                                               \
-            if (!is_empty(__VA_ARGS__)) {                                         \
-                errno = arg_default(0, __VA_ARGS__);                              \
-            }                                                                     \
-            fprintf(stderr, "%s,%d %s: \"%s\" %s, return %d\n",                   \
-                    __FILE__, __LINE__, __func__, #cond, strerror(errno), errno); \
-            return errno;                                                         \
-        }                                                                         \
+// 如果cond为真则退出程序，可选参数为errno，如无则保留当前值不变
+#define exitif(cond, ...)                                                   \
+    do {                                                                    \
+        if (cond) {                                                         \
+            if (!is_empty(__VA_ARGS__)) {                                   \
+                errno = arg_default(0, __VA_ARGS__);                        \
+            }                                                               \
+            logerror("\"%s\" %s, exit(%d)", #cond, strerror(errno), errno); \
+            stacktrace();                                                   \
+            exit(errno);                                                    \
+        }                                                                   \
     } while (0)
 
 shared void free_s(void **pp);
 shared void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz);
 
+// 通用buffer类型，计划未来替换下面的专用buffer
+// 但是有一个问题，就是buffer里面记录size，与初始化时侯全部memset为0有点不协调
+
+// 不设置destructor，因为push/pop不好弄
+struct buffer {
+    size_t size; // 每单元大小
+    void *base;
+    size_t capacity;
+    size_t length;
+};
+#define bufferof(type) \
+    { sizeof(type), NULL, 0, 0 }
+shared void *bfoffset(struct buffer *pbuffer, size_t index);
+shared void bfclear(struct buffer *pbuffer);
+shared void bfstrip(struct buffer *pbuffer);
+shared void bfpush(struct buffer *pbuffer, void *pvalues, size_t nvalues);
+#define bfpushall(pb, pv) bfpush(pb, pv, countof(pv))
+shared void bfpop(struct buffer *pbuffer, void *pvalues, size_t nvalues);
+#define bfpopall(pb, pv) bfpop(pb, pv, (pb)->length)
+shared void bfput(struct buffer *pbuffer, size_t index, void *pvalue);
+shared void bfget(struct buffer *pbuffer, size_t index, void *pvalue);
+shared void bfdump(struct buffer *pbuffer);
+
 // 字符串buffer类型，与通用buffer类型有区别
 struct stringbuffer {
-    char *address;
+    char *base;
     size_t capacity;
     size_t length;
 };
@@ -102,80 +115,6 @@ void sbclear(struct stringbuffer *psb);
 void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen);
 void sbappend(struct stringbuffer *psb, const char *sz);
 void sbdump(struct stringbuffer *psb);
-
-// 通用buffer类型
-#define generic_buffer_struct_declaration(name, type) \
-    struct name {                                     \
-        type *address;                                \
-        size_t capacity;                              \
-        size_t length;                                \
-    }
-#define generic_buffer_variable_declaration(sname, vname) struct sname vname = {NULL, 0, 0}
-#define generic_buffer_clear_function_declaration(sname, fnprefix) \
-    void fnprefix##clear(struct sname *pb)
-#define generic_buffer_clear_function_definition(sname, fnprefix) \
-    generic_buffer_clear_function_declaration(sname, fnprefix) {  \
-        exitif(pb == NULL, EINVAL);                               \
-        free_s((void **)&(pb->address));                          \
-        pb->capacity = 0;                                         \
-        pb->length = 0;                                           \
-    }
-#define generic_buffer_push_function_declaration(sname, fnprefix, type) \
-    void fnprefix##push(struct sname *pb, type v)
-#define generic_buffer_push_function_definition(sname, fnprefix, type)        \
-    generic_buffer_push_function_declaration(sname, fnprefix, type) {         \
-        exitif(pb == NULL, EINVAL);                                           \
-        size_t newlen = pb->length + 1;                                       \
-        size_t newcap = pb->capacity;                                         \
-        while (newcap < newlen) {                                             \
-            newcap = newcap == 0 ? 1 : newcap << 1;                           \
-            exitif(newcap == 0, ERANGE);                                      \
-        }                                                                     \
-        alloc_s((void **)&(pb->address), pb->capacity, newcap, sizeof(type)); \
-        pb->capacity = newcap;                                                \
-        (pb->address)[pb->length] = v;                                        \
-        pb->length = newlen;                                                  \
-    }
-#define generic_buffer_pop_function_declaration(sname, fnprefix, type) \
-    type fnprefix##pop(struct sname *pb)
-#define generic_buffer_pop_function_definition(sname, fnprefix, type) \
-    generic_buffer_pop_function_declaration(sname, fnprefix, type) {  \
-        exitif(pb == NULL, EINVAL);                                   \
-        exitif(pb->length == 0, ERANGE);                              \
-        pb->length--;                                                 \
-        type ret = (pb->address)[pb->length];                         \
-        memset(&((pb->address)[pb->length]), 0, sizeof(type));        \
-        return ret;                                                   \
-    }
-#define generic_buffer_put_function_declaration(sname, fnprefix, type) \
-    void fnprefix##put(struct sname *pb, type v, size_t i)
-#define generic_buffer_put_function_definition(sname, fnprefix, type) \
-    generic_buffer_put_function_declaration(sname, fnprefix, type) {  \
-        exitif(pb == NULL, EINVAL);                                   \
-        exitif(i >= pb->length, ERANGE);                              \
-        (pb->address)[i] = v;                                         \
-    }
-#define generic_buffer_get_function_declaration(sname, fnprefix, type) \
-    type fnprefix##get(struct sname *pb, size_t i)
-#define generic_buffer_get_function_definition(sname, fnprefix, type) \
-    generic_buffer_get_function_declaration(sname, fnprefix, type) {  \
-        exitif(pb == NULL, EINVAL);                                   \
-        exitif(i >= pb->length, ERANGE);                              \
-        return (pb->address)[i];                                      \
-    }
-// 查找失败返回-1
-#define generic_buffer_find_function_declaration(sname, fnprefix, type) \
-    ssize_t fnprefix##find(struct sname *pb, type v)
-#define generic_buffer_find_function_definition(sname, fnprefix, type) \
-    generic_buffer_find_function_declaration(sname, fnprefix, type) {  \
-        exitif(pb == NULL, EINVAL);                                    \
-        for (size_t i = 0; i < pb->length; i++) {                      \
-            if (0 == memcmp(&((pb->address)[i]), &v, sizeof(type))) {  \
-                return i;                                              \
-            }                                                          \
-        }                                                              \
-        return -1;                                                     \
-    }
 
 enum vtype {
     vtnull,
@@ -188,20 +127,28 @@ enum vtype {
 
 struct var;
 
+struct varbuffer {
+    struct var **base;
+    size_t capacity;
+    size_t length;
+};
+void vbclear(struct varbuffer *pb);
+void vbpush(struct varbuffer *pb, struct var *v);
+struct var *vbpop(struct varbuffer *pb);
+void vbput(struct varbuffer *pb, struct var *v, size_t i);
+struct var *vbget(struct varbuffer *pb, size_t i);
+ssize_t vbfind(struct varbuffer *pb, struct var *v);
+
 struct objnode {
     struct stringbuffer key;
     struct var *value;
 };
 
-generic_buffer_struct_declaration(varbuffer, struct var *);
-generic_buffer_clear_function_declaration(varbuffer, vb);
-generic_buffer_push_function_declaration(varbuffer, vb, struct var *);
-generic_buffer_pop_function_declaration(varbuffer, vb, struct var *);
-generic_buffer_put_function_declaration(varbuffer, vb, struct var *);
-generic_buffer_get_function_declaration(varbuffer, vb, struct var *);
-generic_buffer_find_function_declaration(varbuffer, vb, struct var *);
-
-generic_buffer_struct_declaration(objnodebuffer, struct objnode);
+struct objnodebuffer {
+    struct objnode *base;
+    size_t capacity;
+    size_t length;
+};
 
 struct var {
     bool inuse;
@@ -275,6 +222,7 @@ shared struct var *snew(const char *sz);
 shared char *svalue(struct var *pv);
 shared size_t slength(struct var *pv);
 shared struct var *sconcat(size_t num, ...);
+shared struct var *sformat(const char *fmt, ...);
 
 shared struct var *anew(size_t num, ...);
 #define adeclare(a) vdeclare(a, anew(0))
@@ -287,15 +235,6 @@ shared void aput(struct var *pv, size_t idx, struct var *pval);
 shared struct var *aget(struct var *pv, size_t idx);
 shared void asort(struct var *pv, int (*comp)(const struct var *, const struct var *));
 shared void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v));
-// #define aforeach(i, v, arr, stmt)                           \
-//     do {                                                    \
-//         exitif(arr == NULL, EINVAL);                        \
-//         exitif(arr->type != vtarray, EINVAL);               \
-//         for (size_t i = 0; i < (arr->avalue).length; i++) { \
-//             struct var *v = (arr->avalue).address[i];       \
-//             stmt;                                           \
-//         }                                                   \
-//     } while (0)
 
 shared struct var *onew();
 #define odeclare(a) vdeclare(a, onew())
@@ -307,19 +246,6 @@ shared void oput(struct var *pv, const char *key, struct var *pval);
 shared struct var *oget_s(struct var *pv, const char *key, size_t klen);
 shared struct var *oget(struct var *pv, const char *key);
 shared void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v));
-// #define oforeach(k, klen, v, obj, stmt)                          \
-//     do {                                                         \
-//         exitif(obj == NULL, EINVAL);                             \
-//         exitif(obj->type != vtobject, EINVAL);                   \
-//         for (size_t _i = 0; _i < (obj->ovalue).capacity; _i++) { \
-//             char *k = (obj->ovalue).address[_i].key.address;     \
-//             size_t klen = (obj->ovalue).address[_i].key.length;  \
-//             struct var *v = (obj->ovalue).address[_i].value;     \
-//             if (k) {                                             \
-//                 stmt;                                            \
-//             }                                                    \
-//         }                                                        \
-//     } while (0)
 
 shared struct var *vtojson(struct var *pv);
 #define tojson(pv) svalue(vtojson(pv))

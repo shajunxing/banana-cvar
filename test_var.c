@@ -40,6 +40,7 @@ void test_array_memleak() {
 }
 
 void test_string() {
+    vdeclare(a, sformat("%s %d %s", "Hello", 100, "World"));
     sconcat(3, snew("你好"), snew("丢你"), snew("老木"));
     dump();
 }
@@ -169,7 +170,7 @@ void test_foreach() {
 }
 
 int main() {
-    // setlocale(LC_ALL, ".UTF-8");
+    setlocale(LC_ALL, ".UTF-8");
     // vdeclare(b, test1());
     // dump(); // 可以看到函数退出后原先栈内的变量值变化了
     // ndeclare(a, 10);
@@ -186,6 +187,9 @@ int main() {
     // printf("%s\n", tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))));
     // gc();
     // dump();
-    test_foreach();
+    for (;;) {
+        test_string();
+        gc();
+    }
     return 0;
 }

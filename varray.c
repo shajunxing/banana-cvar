@@ -83,7 +83,7 @@ static int acomp_default(const struct var *pv1, const struct var *pv2) {
     case vtstring:
         // 把\0包含进比较里
         // 参见 https://stackoverflow.com/questions/36518931/what-does-strcmp-return-if-two-similar-strings-are-of-different-lengths
-        return memcmp((pv1->svalue).address, (pv2->svalue).address, min((pv1->svalue).length, (pv1->svalue).length) + 1);
+        return memcmp((pv1->svalue).base, (pv2->svalue).base, min((pv1->svalue).length, (pv1->svalue).length) + 1);
     case vtarray:
         return (pv1->avalue).length - (pv2->avalue).length;
     case vtobject:
@@ -105,14 +105,14 @@ void asort(struct var *pv, int (*comp)(const struct var *, const struct var *)) 
     if (NULL == comp) {
         comp = acomp_default;
     }
-    qsort_s(pv->avalue.address, pv->avalue.length, sizeof(struct var *), acomp_relay, comp);
+    qsort_s(pv->avalue.base, pv->avalue.length, sizeof(struct var *), acomp_relay, comp);
 }
 
 void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v)) {
     exitif(arr == NULL, EINVAL);
     exitif(arr->type != vtarray, EINVAL);
     for (size_t i = 0; i < (arr->avalue).length; i++) {
-        struct var *v = (arr->avalue).address[i];
+        struct var *v = (arr->avalue).base[i];
         cb(i, v);
     }
 }

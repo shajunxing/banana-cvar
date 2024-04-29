@@ -17,13 +17,18 @@ struct var *onew() {
     return pv;
 }
 
-static generic_buffer_clear_function_definition(objnodebuffer, onb);
+static void onbclear(struct objnodebuffer *pb) {
+    exitif(pb == NULL, EINVAL);
+    free_s((void **)&(pb->base));
+    pb->capacity = 0;
+    pb->length = 0;
+}
 
 void oclear(struct var *pv) {
     exitif(pv == NULL, EINVAL);
     exitif(pv->type != vtobject, EINVAL);
     for (size_t i = 0; i < pv->ovalue.capacity; i++) {
-        sbclear(&((pv->ovalue).address[i].key));
+        sbclear(&((pv->ovalue).base[i].key));
     }
     onbclear(&(pv->ovalue));
 }
@@ -66,12 +71,12 @@ static struct findresult find(struct objnodebuffer *pb, const char *key, size_t 
     // printf("key=%s\n", key);
     for (size_t rep = 0; rep < pb->capacity; rep++) { // 最多重复cap次就能遍历整个数组
         // printf("rep=%d,hash=%d\n", rep, hash);
-        struct objnode *pon = &((pb->address)[hash]);
+        struct objnode *pon = &((pb->base)[hash]);
         struct stringbuffer *pkey = &(pon->key);
         struct var *value = pon->value;
-        if (pkey->address == NULL) {
+        if (pkey->base == NULL) {
             return (struct findresult){.stat = fsemptynode, .hash = hash};
-        } else if ((pkey->length == klen) && (memcmp(pkey->address, key, klen) == 0)) {
+        } else if ((pkey->length == klen) && (memcmp(pkey->base, key, klen) == 0)) {
             return (struct findresult){.stat = fskeymatch, .hash = hash};
         }
         hash = nh(hash, mask);
@@ -88,7 +93,7 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
     struct findresult ret = find(&(pv->ovalue), key, klen);
     if (ret.stat == fskeymatch) {
         // 存在则修改值并返回
-        (pv->ovalue).address[ret.hash].value = pval;
+        (pv->ovalue).base[ret.hash].value = pval;
         return;
     }
     // 不存在则增加
@@ -97,8 +102,8 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
     if ((pv->ovalue).capacity >= reqcap) {
         // 无需扩容
         exitif(ret.stat != fsemptynode, ERANGE); // 这是不应该发生的
-        sbappend_s(&((pv->ovalue).address[ret.hash].key), key, klen);
-        (pv->ovalue).address[ret.hash].value = pval;
+        sbappend_s(&((pv->ovalue).base[ret.hash].key), key, klen);
+        (pv->ovalue).base[ret.hash].value = pval;
         (pv->ovalue).length++;
     } else {
         size_t newcap = (pv->ovalue).capacity;
@@ -107,15 +112,15 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
             exitif(newcap == 0, ERANGE);
         } while (newcap < reqcap);
         // 重新哈希
-        generic_buffer_variable_declaration(objnodebuffer, newoval);
-        alloc_s((void **)&(newoval.address), 0, newcap, sizeof(struct objnode));
+        struct objnodebuffer newoval = {NULL, 0, 0};
+        alloc_s((void **)&(newoval.base), 0, newcap, sizeof(struct objnode));
         newoval.capacity = newcap;
         for (size_t i = 0; i < (pv->ovalue).capacity; i++) {
-            struct objnode node = (pv->ovalue).address[i];
-            if (node.key.address) { // 该节点是存在的
-                struct findresult ret = find(&newoval, node.key.address, node.key.length);
+            struct objnode node = (pv->ovalue).base[i];
+            if (node.key.base) { // 该节点是存在的
+                struct findresult ret = find(&newoval, node.key.base, node.key.length);
                 exitif(ret.stat != fsemptynode, ERANGE); // 这是不应该发生的
-                newoval.address[ret.hash] = node;
+                newoval.base[ret.hash] = node;
                 newoval.length++;
             }
         }
@@ -124,8 +129,8 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
         // 再次查找
         struct findresult ret = find(&(pv->ovalue), key, klen);
         exitif(ret.stat != fsemptynode, ERANGE); // 这是不应该发生的
-        sbappend_s(&((pv->ovalue).address[ret.hash].key), key, klen);
-        (pv->ovalue).address[ret.hash].value = pval;
+        sbappend_s(&((pv->ovalue).base[ret.hash].key), key, klen);
+        (pv->ovalue).base[ret.hash].value = pval;
         (pv->ovalue).length++;
     }
 }
@@ -141,7 +146,7 @@ struct var *oget_s(struct var *pv, const char *key, size_t klen) {
     exitif(key == NULL, EINVAL);
     struct findresult ret = find(&(pv->ovalue), key, klen);
     if (ret.stat == fskeymatch) {
-        return (pv->ovalue).address[ret.hash].value;
+        return (pv->ovalue).base[ret.hash].value;
     } else {
         return NULL;
     }
@@ -155,9 +160,9 @@ void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var
     exitif(obj == NULL, EINVAL);
     exitif(obj->type != vtobject, EINVAL);
     for (size_t _i = 0; _i < (obj->ovalue).capacity; _i++) {
-        char *k = (obj->ovalue).address[_i].key.address;
-        size_t klen = (obj->ovalue).address[_i].key.length;
-        struct var *v = (obj->ovalue).address[_i].value;
+        char *k = (obj->ovalue).base[_i].key.base;
+        size_t klen = (obj->ovalue).base[_i].key.length;
+        struct var *v = (obj->ovalue).base[_i].value;
         if (k) {
             cb(k, klen, v);
         }

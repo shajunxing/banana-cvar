@@ -86,7 +86,7 @@ void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
 
 void sbclear(struct stringbuffer *psb) {
     exitif(psb == NULL, EINVAL);
-    free_s((void **)&(psb->address));
+    free_s((void **)&(psb->base));
     psb->capacity = 0;
     psb->length = 0;
 }
@@ -101,9 +101,9 @@ void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen) {
         newcap = newcap == 0 ? 1 : newcap << 1;
         exitif(newcap == 0, ERANGE);
     }
-    alloc_s((void **)&(psb->address), psb->capacity, newcap, 1);
+    alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
     psb->capacity = newcap;
-    memcpy(psb->address + psb->length, s, slen);
+    memcpy(psb->base + psb->length, s, slen);
     psb->length = newlen;
 }
 
@@ -114,15 +114,61 @@ void sbappend(struct stringbuffer *psb, const char *sz) {
 }
 
 void sbdump(struct stringbuffer *psb) {
-    printf("%d,%d,%s", psb->capacity, psb->length, psb->address);
+    printf("%d,%d,%s", psb->capacity, psb->length, psb->base);
 }
 
-generic_buffer_clear_function_definition(varbuffer, vb);
-generic_buffer_push_function_definition(varbuffer, vb, struct var *);
-generic_buffer_pop_function_definition(varbuffer, vb, struct var *);
-generic_buffer_put_function_definition(varbuffer, vb, struct var *);
-generic_buffer_get_function_definition(varbuffer, vb, struct var *);
-generic_buffer_find_function_definition(varbuffer, vb, struct var *);
+void vbclear(struct varbuffer *pb) {
+    exitif(pb == NULL, EINVAL);
+    free_s((void **)&(pb->base));
+    pb->capacity = 0;
+    pb->length = 0;
+}
+
+void vbpush(struct varbuffer *pb, struct var *v) {
+    exitif(pb == NULL, EINVAL);
+    size_t newlen = pb->length + 1;
+    size_t newcap = pb->capacity;
+    while (newcap < newlen) {
+        newcap = newcap == 0 ? 1 : newcap << 1;
+        exitif(newcap == 0, ERANGE);
+    }
+    alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct var *));
+    pb->capacity = newcap;
+    (pb->base)[pb->length] = v;
+    pb->length = newlen;
+}
+
+struct var *vbpop(struct varbuffer *pb) {
+    exitif(pb == NULL, EINVAL);
+    exitif(pb->length == 0, ERANGE);
+    pb->length--;
+    struct var *ret = (pb->base)[pb->length];
+    memset(&((pb->base)[pb->length]), 0, sizeof(struct var *));
+    return ret;
+}
+
+void vbput(struct varbuffer *pb, struct var *v, size_t i) {
+    exitif(pb == NULL, EINVAL);
+    exitif(i >= pb->length, ERANGE);
+    (pb->base)[i] = v;
+}
+
+struct var *vbget(struct varbuffer *pb, size_t i) {
+    exitif(pb == NULL, EINVAL);
+    exitif(i >= pb->length, ERANGE);
+    return (pb->base)[i];
+}
+
+// 查找失败返回-1
+ssize_t vbfind(struct varbuffer *pb, struct var *v) {
+    exitif(pb == NULL, EINVAL);
+    for (size_t i = 0; i < pb->length; i++) {
+        if (0 == memcmp(&((pb->base)[i]), &v, sizeof(struct var *))) {
+            return i;
+        }
+    }
+    return -1;
+}
 
 // 全局变量取名尽量不用缩写，以便与函数内参数名区分
 // 以链表方式存储，如果用数组方式，gc收缩数组还需要修改pointer地址，太麻烦
@@ -149,7 +195,7 @@ void vdump(const char *prefix, const struct var *pv) {
         printf("n %lg", pv->nvalue);
         break;
     case vtstring:
-        printf("s %d,%d \"%s\"", (pv->svalue).capacity, (pv->svalue).length, (pv->svalue).address);
+        printf("s %d,%d \"%s\"", (pv->svalue).capacity, (pv->svalue).length, (pv->svalue).base);
         break;
     case vtarray:
         printf("a %d,%d [", (pv->avalue).capacity, (pv->avalue).length);
@@ -157,7 +203,7 @@ void vdump(const char *prefix, const struct var *pv) {
             if (i > 0) {
                 printf(" ");
             }
-            printf("%p", (pv->avalue).address[i]);
+            printf("%p", (pv->avalue).base[i]);
         }
         printf("]");
         break;
@@ -167,11 +213,11 @@ void vdump(const char *prefix, const struct var *pv) {
             if (i > 0) {
                 printf(" ");
             }
-            if ((pv->ovalue).address[i].key.address) {
-                sbdump(&((pv->ovalue).address[i].key));
+            if ((pv->ovalue).base[i].key.base) {
+                sbdump(&((pv->ovalue).base[i].key));
                 printf(":");
             }
-            printf("%p", (pv->ovalue).address[i].value);
+            printf("%p", (pv->ovalue).base[i].value);
         }
         printf("}");
         break;
@@ -217,7 +263,7 @@ void markinuse(struct var *pv) {
     pv->inuse = true;
     if (vtarray == pv->type) {
         for (size_t i = 0; i < (pv->avalue).length; i++) {
-            struct var *p = (pv->avalue).address[i];
+            struct var *p = (pv->avalue).base[i];
             if (p->inuse) {
                 continue;
             }
@@ -225,8 +271,8 @@ void markinuse(struct var *pv) {
         }
     } else if (vtobject == pv->type) {
         for (size_t i = 0; i < (pv->ovalue).capacity; i++) {
-            struct objnode *pon = &((pv->ovalue).address[i]);
-            if ((pon->key).address == NULL) {
+            struct objnode *pon = &((pv->ovalue).base[i]);
+            if ((pon->key).base == NULL) {
                 continue;
             }
             struct var *p = pon->value;

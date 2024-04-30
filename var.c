@@ -170,6 +170,16 @@ ssize_t vbfind(struct varbuffer *pb, struct var *v) {
     return -1;
 }
 
+void vbdump(struct varbuffer *pb) {
+    printf("capacity: %d\n", pb->capacity);
+    printf("  length: %d\n", pb->length);
+    for (int i = 0; i < pb->length; i++) {
+        printf("%8d: ", i);
+        vdump("", (pb->base)[i]);
+    }
+    printf("\n");
+}
+
 // 全局变量取名尽量不用缩写，以便与函数内参数名区分
 // 以链表方式存储，如果用数组方式，gc收缩数组还需要修改pointer地址，太麻烦
 static __thread struct var *pvarroot = NULL;

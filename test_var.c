@@ -187,8 +187,11 @@ int main() {
     // printf("%s\n", tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))));
     // gc();
     // dump();
+    //     test_string();
+    //     gc();
+    const char *jsonstr = "{\"Hello\" 2.7183, \"World\" 3.1416, \"\\\\\\/\" [true, {\"hi\":\"baby\"}, null, nul]}";
     for (;;) {
-        test_string();
+        puts(tojson(vfromjson(jsonstr)));
         gc();
     }
     return 0;

@@ -132,7 +132,7 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |-|-|-|
 |struct var *vtojson(struct var *pv)||jsonize arbitrary variables, and the result is returned as a string variable, note: nesting dolls are prohibited, and nested loops are ignored|
 |tojson(pv)|print([null, [3.140000, "hi"], false])|Returns an array of C characters jsonized by the variable, which is used for functions such as printf<br>printf(tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))))|
-|fromjson(...)||Parsing JSON strings, building variables, not implemented.|
+|struct var *vfromjson_s(const char *jsonstr, size_t jsonslen)<br>struct var *vfromjson(const char *jsonstr)||Parsing JSON strings, this function will skip all non-essential characters, so it has a strong error correction ability, in addition, UTF-16 escape is not supported, because it has long been abandoned, JSON strings themselves are forced UTF-8 encoding|
 
 ## Code sample
 

@@ -61,6 +61,6 @@ struct var *sformat(const char *fmt, ...) {
     struct var *pv = vnew();
     pv->type = vtstring;
     sbappend_s(&(pv->svalue), s, slen);
-    free_s(&s);
+    free_s((void **)&s);
     return pv;
 }

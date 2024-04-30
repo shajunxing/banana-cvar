@@ -13,6 +13,7 @@ You should have received a copy of the GNU General Public License along with thi
 
 // 比如vasprintf就需要声明_GNU_SOURCE
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -132,12 +133,14 @@ struct varbuffer {
     size_t capacity;
     size_t length;
 };
+#define vbdeclare(var_name) struct varbuffer var_name = {NULL, 0, 0}
 void vbclear(struct varbuffer *pb);
 void vbpush(struct varbuffer *pb, struct var *v);
 struct var *vbpop(struct varbuffer *pb);
 void vbput(struct varbuffer *pb, struct var *v, size_t i);
 struct var *vbget(struct varbuffer *pb, size_t i);
 ssize_t vbfind(struct varbuffer *pb, struct var *v);
+void vbdump(struct varbuffer *pb);
 
 struct objnode {
     struct stringbuffer key;
@@ -249,5 +252,7 @@ shared void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, str
 
 shared struct var *vtojson(struct var *pv);
 #define tojson(pv) svalue(vtojson(pv))
+shared struct var *vfromjson_s(const char *jsonstr, size_t jsonslen);
+shared struct var *vfromjson(const char *jsonstr);
 
 #endif

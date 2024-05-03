@@ -10,9 +10,51 @@ You should have received a copy of the GNU General Public License along with thi
 
 #include "var.h"
 
+static void sbappendescape_s(struct stringbuffer *psb, const char *s, size_t slen) {
+    char *base = (char *)s;
+    size_t offs = 0;
+    size_t offset = 0;
+    for (; offset < slen; offset++) {
+        char c = *(s + offset);
+        char *subs = NULL;
+        switch (c) {
+        case '"':
+            subs = "\\\"";
+            break;
+        case '\\':
+            subs = "\\\\";
+            break;
+        case '\b':
+            subs = "\\b";
+            break;
+        case '\f':
+            subs = "\\f";
+            break;
+        case '\n':
+            subs = "\\n";
+            break;
+        case '\r':
+            subs = "\\r";
+            break;
+        case '\t':
+            subs = "\\t";
+            break;
+        default:
+            break;
+        }
+        if (subs) {
+            // logdebug("*(base+offs)=%c offset-offs=%lld", *(base + offs), offset - offs);
+            sbappend_s(psb, base + offs, offset - offs);
+            sbappend(psb, subs);
+            offs = offset + 1;
+        }
+    }
+    // logdebug("*(base+offs)=%c offset-offs=%lld", *(base + offs), offset - offs);
+    sbappend_s(psb, base + offs, offset - offs);
+}
+
 static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv) {
     vbpush(pvb, pv);
-    char buff[128];
     switch (pv->type) {
     case vtnull:
         sbappend(psb, "null");
@@ -21,13 +63,14 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
         sbappend(psb, pv->bvalue ? "true" : "false");
         break;
     case vtnumber:
-        memset(buff, 0, sizeof buff);
-        snprintf(buff, sizeof buff, "%lg", pv->nvalue);
-        sbappend(psb, buff);
+        char *s = NULL;
+        int slen = asprintf(&s, "%lg", pv->nvalue);
+        sbappend_s(psb, s, slen);
+        free_s((void **)&s);
         break;
     case vtstring:
         sbappend(psb, "\"");
-        sbappend_s(psb, (pv->svalue).base, (pv->svalue).length);
+        sbappendescape_s(psb, (pv->svalue).base, (pv->svalue).length);
         sbappend(psb, "\"");
         break;
     case vtarray:
@@ -60,7 +103,7 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
             }
             j++;
             sbappend(psb, "\"");
-            sbappend_s(psb, (pv->ovalue).base[i].key.base, (pv->ovalue).base[i].key.length);
+            sbappendescape_s(psb, (pv->ovalue).base[i].key.base, (pv->ovalue).base[i].key.length);
             sbappend(psb, "\":");
             toj(psb, pvb, (pv->ovalue).base[i].value);
         }
@@ -73,8 +116,10 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
 // 转换为JSON兼容的字符串格式
 struct var *vtojson(struct var *pv) {
     exitif(pv == NULL, EINVAL);
-    sbdeclare(sb);
-    vbdeclare(vb);
+    struct stringbuffer sb;
+    sbinit(&sb);
+    struct varbuffer vb;
+    vbinit(&vb);
     toj(&sb, &vb, pv);
     vbclear(&vb);
     struct var *ps = vnew();
@@ -82,22 +127,6 @@ struct var *vtojson(struct var *pv) {
     // 此处sb不用clear，交由ps托管
     ps->svalue = sb;
     return ps;
-}
-
-struct var *fromj(int expect, char *pchar, size_t remain) {
-    if (remain <= 0) {
-        fprintf(stderr, "Out of chars\n");
-        return znew();
-    }
-    switch (expect) {
-    default:
-        // 跳过空格
-        while ((*pchar == ' ' || *pchar == '\r' || *pchar == '\n' || *pchar == '\t') && remain > 0) {
-            pchar++;
-            remain--;
-        }
-        break;
-    }
 }
 
 static bool isstartingnumchar(char ch) {
@@ -108,71 +137,77 @@ static bool isfollowingnumchar(char ch) {
     return isstartingnumchar(ch) || ch == '.' || ch == 'E' || ch == 'e' || ch == '+';
 }
 
-static uint16_t hex2int(char ch) {
-    if (ch >= '0' && ch <= '9') {
-        return ch - '0';
-    } else if (ch >= 'a' && ch <= 'f') {
-        return ch - 'a' + 10;
-    } else if (ch >= 'A' && ch <= 'F') {
-        return ch - 'A' + 10;
-    }
-}
-
 struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
-    vbdeclare(vb);
+    struct varbuffer vb;
+    vbinit(&vb);
     char *base = (char *)jsonstr;
     for (size_t offset = 0; offset < jsonslen; offset++) {
         char *p = base + offset;
+        // 栈顶元素是否已完整，如是则在循环尾部尝试向下合并
+        // 每次循环开始重置为false
+        bool trymerge = false;
+        // vbdump(&vb);
+        // printf("%c\n\n", *p);
         if (*p == '{') {
             vbpush(&vb, onew());
         } else if (*p == '[') {
             vbpush(&vb, anew(0));
         } else if (*p == '"') {
-            sbdeclare(sb);
+            // 性能测试结果alloc_s巨量调用和时间占用，此处给一个较大的初始容量
+            struct var *s = vnew();
+            s->type = vtstring;
+            struct stringbuffer *sb = &(s->svalue);
+            sbinit(sb);
+            // 注意空字符串
+            size_t offs = offset + 1; // 记录非转义符片段的起始位置，sbappend bulk copy提速
             for (offset++; offset < jsonslen; offset++) {
                 p = base + offset;
-                if (*p != '"') {
-                    if (*p == '\\') {
-                        offset++;
-                        if (offset < jsonslen) {
-                            p = base + offset;
-                            if (*p == 'b') {
-                                sbappend(&sb, "\b");
-                            } else if (*p == 'f') {
-                                sbappend(&sb, "\f");
-                            } else if (*p == 'n') {
-                                sbappend(&sb, "\n");
-                            } else if (*p == 'r') {
-                                sbappend(&sb, "\r");
-                            } else if (*p == 't') {
-                                sbappend(&sb, "\t");
-                            } else { // utf16不处理了，废弃的东西不支持
-                                sbappend_s(&sb, p, 1); // 包括"/\等其它的都原样录入
-                            }
-                        }
-                    } else {
-                        sbappend_s(&sb, p, 1);
-                    }
-                } else {
+                if (*p == '"') {
+                    // logdebug("*(base+offs)=%c offset-offs=%lld", *(base + offs), offset - offs);
+                    sbappend_s(sb, base + offs, offset - offs); // 拷贝之前的非转义片段
                     break;
+                } else if (*p == '\\') {
+                    // logdebug("*(base+offs)=%c offset-offs=%lld", *(base + offs), offset - offs);
+                    sbappend_s(sb, base + offs, offset - offs); // 拷贝之前的非转义片段
+                    offset++;
+                    if (offset < jsonslen) {
+                        p = base + offset;
+                        if (*p == 'b') {
+                            sbappend(sb, "\b");
+                        } else if (*p == 'f') {
+                            sbappend(sb, "\f");
+                        } else if (*p == 'n') {
+                            sbappend(sb, "\n");
+                        } else if (*p == 'r') {
+                            sbappend(sb, "\r");
+                        } else if (*p == 't') {
+                            sbappend(sb, "\t");
+                        } else if (*p == 'u') {
+                            // 完整的utf16（变长的）支持太麻烦，而且没什么用，跳过吧
+                            sbappend(sb, "\\u");
+                        } else {
+                            sbappend_s(sb, p, 1); // 包括"/\等其它的都原样录入
+                        }
+                    }
+                    offs = offset + 1; // 新起始位置
                 }
             }
-            vbpush(&vb, snew(sb.base));
-            sbclear(&sb);
+            vbpush(&vb, s);
+            trymerge = true;
         } else if (isstartingnumchar(*p)) {
-            sbdeclare(sb);
-            sbappend_s(&sb, p, 1);
+            struct stringbuffer sb;
+            sbinit(&sb);
+            size_t left = offset;
             for (offset++; offset < jsonslen; offset++) {
-                p = base + offset;
-                if (isfollowingnumchar(*p)) {
-                    sbappend_s(&sb, p, 1);
-                } else {
+                if (!isfollowingnumchar(*(base + offset))) {
                     offset--;
                     break;
                 }
             }
+            sbappend_s(&sb, p, offset + 1 - left);
             vbpush(&vb, nnew(atof(sb.base)));
             sbclear(&sb);
+            trymerge = true;
         } else if (*p == 't') {
             offset += 3;
             if (offset < jsonslen) {
@@ -180,6 +215,7 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
                     vbpush(&vb, bnew(true));
                 }
             }
+            trymerge = true;
         } else if (*p == 'f') {
             offset += 4;
             if (offset < jsonslen) {
@@ -187,6 +223,7 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
                     vbpush(&vb, bnew(false));
                 }
             }
+            trymerge = true;
         } else if (*p == 'n') {
             offset += 3;
             if (offset < jsonslen) {
@@ -194,7 +231,13 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
                     vbpush(&vb, znew());
                 }
             }
-        } else if (*p == ',' || *p == ']' || *p == '}') {
+            trymerge = true;
+        } else if (*p == ']' || *p == '}') {
+            trymerge = true;
+        }
+        // 跳过别的字符，主要是空格，其它权当容错
+        // 尝试向下合并，并不判断逗号，只要数据完整了就执行
+        if (trymerge) {
             if (vb.length >= 3 && (vb.base[vb.length - 3])->type == vtobject) {
                 struct var *v = vbpop(&vb);
                 struct var *k = vbpop(&vb);
@@ -206,8 +249,8 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
                 apush(vb.base[vb.length - 1], v);
             }
         }
-        // 跳过别的字符，主要是空格，其它权当容错
     }
+    // vbdump(&vb);
     struct var *result = vbget(&vb, 0);
     vbclear(&vb);
     return result;

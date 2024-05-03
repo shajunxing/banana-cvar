@@ -46,17 +46,30 @@ You should have received a copy of the GNU General Public License along with thi
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define lambda(ret, args, body) ({ ret f args body &f; })
 
-#define max(a, b) \
-    ({ __auto_type _a = (a); \
+#ifndef max
+    #define max(a, b) \
+        ({ __auto_type _a = (a); \
        __auto_type _b = (b); \
      _a > _b ? _a : _b; })
-#define min(a, b) \
-    ({ __auto_type _a = (a); \
+#endif
+#ifndef min
+    #define min(a, b) \
+        ({ __auto_type _a = (a); \
        __auto_type _b = (b); \
      _a < _b ? _a : _b; })
+#endif
+
+#ifdef DEBUG
+    #define logdebug(format, ...) \
+        fprintf(stdout, "DEBUG %s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#else
+    #define logdebug(format, ...) \
+        do {                      \
+        } while (0)
+#endif
 
 #define logerror(format, ...) \
-    fprintf(stderr, "%s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+    fprintf(stderr, "ERROR %s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 
 // 参考 https://stackoverflow.com/questions/55417186/is-this-a-valid-way-of-checking-if-a-variadic-macro-argument-list-is-empty
 #define is_empty(...) (sizeof((char[]){#__VA_ARGS__}) == 1)
@@ -82,6 +95,10 @@ shared void stacktrace();
 shared void free_s(void **pp);
 shared void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz);
 
+// 为了优化性能，设置buffer的初始容量，该数值为2的幂的指数
+// 经测试容量8比较合适，太大反而速度降低了
+#define buffer_initial_capacity_exponent 3
+
 // 通用buffer类型，计划未来替换下面的专用buffer
 // 但是有一个问题，就是buffer里面记录size，与初始化时侯全部memset为0有点不协调
 
@@ -92,8 +109,7 @@ struct buffer {
     size_t capacity;
     size_t length;
 };
-#define bufferof(type) \
-    { sizeof(type), NULL, 0, 0 }
+shared void bfinit(struct buffer *pbuffer, size_t size);
 shared void *bfoffset(struct buffer *pbuffer, size_t index);
 shared void bfclear(struct buffer *pbuffer);
 shared void bfstrip(struct buffer *pbuffer);
@@ -111,11 +127,11 @@ struct stringbuffer {
     size_t capacity;
     size_t length;
 };
-#define sbdeclare(var_name) struct stringbuffer var_name = {NULL, 0, 0}
-void sbclear(struct stringbuffer *psb);
-void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen);
-void sbappend(struct stringbuffer *psb, const char *sz);
-void sbdump(struct stringbuffer *psb);
+shared void sbinit(struct stringbuffer *psb);
+shared void sbclear(struct stringbuffer *psb);
+shared void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen);
+shared void sbappend(struct stringbuffer *psb, const char *sz);
+shared void sbdump(struct stringbuffer *psb);
 
 enum vtype {
     vtnull,
@@ -133,14 +149,14 @@ struct varbuffer {
     size_t capacity;
     size_t length;
 };
-#define vbdeclare(var_name) struct varbuffer var_name = {NULL, 0, 0}
-void vbclear(struct varbuffer *pb);
-void vbpush(struct varbuffer *pb, struct var *v);
-struct var *vbpop(struct varbuffer *pb);
-void vbput(struct varbuffer *pb, struct var *v, size_t i);
-struct var *vbget(struct varbuffer *pb, size_t i);
-ssize_t vbfind(struct varbuffer *pb, struct var *v);
-void vbdump(struct varbuffer *pb);
+shared void vbinit(struct varbuffer *pb);
+shared void vbclear(struct varbuffer *pb);
+shared void vbpush(struct varbuffer *pb, struct var *v);
+shared struct var *vbpop(struct varbuffer *pb);
+shared void vbput(struct varbuffer *pb, struct var *v, size_t i);
+shared struct var *vbget(struct varbuffer *pb, size_t i);
+shared ssize_t vbfind(struct varbuffer *pb, struct var *v);
+shared void vbdump(struct varbuffer *pb);
 
 struct objnode {
     struct stringbuffer key;
@@ -201,7 +217,7 @@ shared void refer(struct var **ppv, char *descr, struct var *pval);
     struct var *a = NULL; \
     vassign(a, b)
 
-struct var *vnew();
+shared struct var *vnew();
 shared enum vtype vtype(struct var *pv);
 
 shared struct var *znew();
@@ -222,7 +238,7 @@ shared struct var *snew_s(const char *s, size_t slen);
 shared struct var *snew(const char *sz);
 #define sdeclare(a, b) vdeclare(a, snew(b))
 #define sassign(a, b) vassign(a, snew(b))
-shared char *svalue(struct var *pv);
+shared const char *svalue(struct var *pv);
 shared size_t slength(struct var *pv);
 shared struct var *sconcat(size_t num, ...);
 shared struct var *sformat(const char *fmt, ...);

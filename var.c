@@ -29,12 +29,12 @@ static int btcb_full(void *data, uintptr_t pc, const char *filename, int lineno,
     return 0;
 }
 
-static void btcb_syminfo(void *data, uintptr_t pc, const char *symname, uintptr_t symval, uintptr_t symsize) {
-    fprintf(stderr, "%s %p %d\n", symname, symval, symsize);
-}
+// static void btcb_syminfo(void *data, uintptr_t pc, const char *symname, uintptr_t symval, uintptr_t symsize) {
+//     fprintf(stderr, "%s %p %lld\n", symname, (void *)symval, symsize);
+// }
 
 static int btcb_simple(void *data, uintptr_t pc) {
-    fprintf(stderr, "\t%p ", pc);
+    fprintf(stderr, "\t%p ", (void *)pc);
     backtrace_pcinfo(bt_state, pc, btcb_full, btcb_error, NULL);
     // backtrace_syminfo(bt_state, pc, btcb_syminfo, btcb_error, NULL);
     return 0;
@@ -63,12 +63,16 @@ void free_s(void **pp) {
 // 参考 https://stackoverflow.com/questions/2141277/how-to-zero-out-new-memory-after-realloc
 // 注意memset里面void *类型的加法操作结果异常，经测试是会把加数放大16倍，单写程序却无法复现，经查void *类型的算术运算是非法的，参见 https://stackoverflow.com/questions/3523145/pointer-arithmetic-for-void-pointer-in-c
 void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
+    // logdebug("oldnum=%lld newnum=%lld sz=%lld", oldnum, newnum, sz);
     exitif(pp == NULL, EINVAL);
     exitif((*pp != NULL) && (oldnum == 0), EINVAL);
     exitif((*pp == NULL) && (oldnum > 0), EINVAL);
     exitif(sz == 0, EINVAL);
     size_t oldsize = oldnum * sz;
     size_t newsize = newnum * sz;
+    if (newsize == oldsize) { // 进一步防止诸如sbappend_s每次都调用alloc_s的逻辑错误
+        return;
+    }
     if (newsize > 0) {
         if (*pp) {
             *pp = realloc(*pp, newsize);
@@ -84,6 +88,13 @@ void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
     }
 }
 
+void sbinit(struct stringbuffer *psb) {
+    memset(psb, 0, sizeof *psb);
+    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
+    psb->capacity = newcap;
+}
+
 void sbclear(struct stringbuffer *psb) {
     exitif(psb == NULL, EINVAL);
     free_s((void **)&(psb->base));
@@ -92,17 +103,23 @@ void sbclear(struct stringbuffer *psb) {
 }
 
 void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen) {
+    // logdebug("*s=%c slen=%lld", *s, slen);
     exitif(psb == NULL, EINVAL);
     exitif((s == NULL) && (slen > 0), EINVAL);
+    if (slen == 0) { // 比如json处理转义符的代码，很多长度0的情况
+        return;
+    }
     size_t newlen = psb->length + slen;
     size_t reqcap = newlen + 1;
-    size_t newcap = psb->capacity;
-    while (newcap < reqcap) {
-        newcap = newcap == 0 ? 1 : newcap << 1;
-        exitif(newcap == 0, ERANGE);
+    if (psb->capacity < reqcap) { // 修正每次都调用alloc_s的逻辑错误
+        size_t newcap = psb->capacity;
+        while (newcap < reqcap) {
+            newcap = newcap == 0 ? 1 : newcap << 1;
+            exitif(newcap == 0, ERANGE);
+        }
+        alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
+        psb->capacity = newcap;
     }
-    alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
-    psb->capacity = newcap;
     memcpy(psb->base + psb->length, s, slen);
     psb->length = newlen;
 }
@@ -114,7 +131,14 @@ void sbappend(struct stringbuffer *psb, const char *sz) {
 }
 
 void sbdump(struct stringbuffer *psb) {
-    printf("%d,%d,%s", psb->capacity, psb->length, psb->base);
+    printf("%lld,%lld,%s", psb->capacity, psb->length, psb->base);
+}
+
+void vbinit(struct varbuffer *pb) {
+    memset(pb, 0, sizeof *pb);
+    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct var *));
+    pb->capacity = newcap;
 }
 
 void vbclear(struct varbuffer *pb) {
@@ -125,15 +149,18 @@ void vbclear(struct varbuffer *pb) {
 }
 
 void vbpush(struct varbuffer *pb, struct var *v) {
+    // logdebug("");
     exitif(pb == NULL, EINVAL);
     size_t newlen = pb->length + 1;
-    size_t newcap = pb->capacity;
-    while (newcap < newlen) {
-        newcap = newcap == 0 ? 1 : newcap << 1;
-        exitif(newcap == 0, ERANGE);
+    if (pb->capacity < newlen) { // 修正每次都调用alloc_s的逻辑错误
+        size_t newcap = pb->capacity;
+        while (newcap < newlen) {
+            newcap = newcap == 0 ? 1 : newcap << 1;
+            exitif(newcap == 0, ERANGE);
+        }
+        alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct var *));
+        pb->capacity = newcap;
     }
-    alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct var *));
-    pb->capacity = newcap;
     (pb->base)[pb->length] = v;
     pb->length = newlen;
 }
@@ -171,8 +198,8 @@ ssize_t vbfind(struct varbuffer *pb, struct var *v) {
 }
 
 void vbdump(struct varbuffer *pb) {
-    printf("capacity: %d\n", pb->capacity);
-    printf("  length: %d\n", pb->length);
+    printf("capacity: %lld\n", pb->capacity);
+    printf("  length: %lld\n", pb->length);
     for (int i = 0; i < pb->length; i++) {
         printf("%8d: ", i);
         vdump("", (pb->base)[i]);
@@ -205,10 +232,10 @@ void vdump(const char *prefix, const struct var *pv) {
         printf("n %lg", pv->nvalue);
         break;
     case vtstring:
-        printf("s %d,%d \"%s\"", (pv->svalue).capacity, (pv->svalue).length, (pv->svalue).base);
+        printf("s %lld,%lld \"%s\"", (pv->svalue).capacity, (pv->svalue).length, (pv->svalue).base);
         break;
     case vtarray:
-        printf("a %d,%d [", (pv->avalue).capacity, (pv->avalue).length);
+        printf("a %lld,%lld [", (pv->avalue).capacity, (pv->avalue).length);
         for (size_t i = 0; i < (pv->avalue).capacity; i++) {
             if (i > 0) {
                 printf(" ");
@@ -218,7 +245,7 @@ void vdump(const char *prefix, const struct var *pv) {
         printf("]");
         break;
     case vtobject:
-        printf("o %d,%d {", (pv->ovalue).capacity, (pv->ovalue).length);
+        printf("o %lld,%lld {", (pv->ovalue).capacity, (pv->ovalue).length);
         for (size_t i = 0; i < (pv->ovalue).capacity; i++) {
             if (i > 0) {
                 printf(" ");
@@ -339,6 +366,8 @@ void gc() {
                 break;
             case vtobject:
                 oclear(pv);
+                break;
+            default:
                 break;
             }
             struct var *p = pv;

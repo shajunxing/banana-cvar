@@ -47,20 +47,25 @@ void test_string() {
 
 void test_json() {
     vdeclare(a, anew(0));
-    printf("%s\n", svalue(vtojson(a)));
-    dump();
+    puts(tojson(a));
     apush(a, znew());
     apush(a, bnew(true));
     apush(a, bnew(false));
     apush(a, nnew(3.141592654));
     apush(a, snew("你好世界"));
-    printf("%s\n", svalue(vtojson(a)));
+    puts(tojson(a));
     vdeclare(b, anew(0));
     apush(b, nnew(2.718281829));
-    apush(b, snew("HelloWorld"));
+    apush(b, snew("Hello\"\\/Eaten\b\f\n\r\tWorld"));
     apush(a, b);
-    printf("%s\n", svalue(vtojson(a)));
-    dump();
+    puts(tojson(a));
+    puts(tojson(vfromjson("{\"H      ello\" {}, \"World\" 3.1416, \"\\\\\\/\" [true, {\"hi\":\"baby\"}, null, \"\\u0030\\u0034\"]}")));
+    puts(tojson(vfromjson("[[[],[]]]")));
+    puts(tojson(vfromjson("[3.14, \"foo\"]")));
+    puts(tojson(vfromjson("\"foo\"")));
+    puts(tojson(vfromjson("\"foo\\t\"")));
+    puts(tojson(vfromjson("\"foo\\u\"")));
+    puts(tojson(vfromjson("\"foo\\u0000bar\"")));
 }
 
 void test_object() {
@@ -80,10 +85,10 @@ void test_object() {
     printf("%p\n", oget(a, "baz"));
     printf("%p\n", oget(a, "abc"));
     printf("%p\n", oget(a, "xyz"));
-    printf("%s\n", tojson(a));
+    puts(tojson(a));
     vdeclare(b, anew(4, bnew(false), a, nnew(2.718), snew("特别军事行动")));
     oput(a, "arrrrrrrrrr", b);
-    printf("%s\n", tojson(a));
+    puts(tojson(a));
     printf("\n");
     dump();
     oclear(a);
@@ -157,7 +162,7 @@ void test_asort() {
 void test_foreach() {
     vdeclare(arr, anew(6, znew(), bnew(true), nnew(3.14), snew("hello"), anew(0), onew()));
     aforeach(arr, lambda(void, (size_t i, struct var * v), {
-                 printf("%d\t%s\n", i, tojson(v));
+                 printf("%lld\t%s\n", i, tojson(v));
              }));
     odeclare(obj);
     oput(obj, "1st", znew());
@@ -165,8 +170,31 @@ void test_foreach() {
     oput(obj, "3rd", nnew(2.718));
     oput(obj, "4th", arr);
     oforeach(obj, lambda(void, (const char *k, size_t klen, struct var *v), {
-                 printf("%s,%d\t%s\n", k, klen, tojson(v));
+                 printf("%s,%lld\t%s\n", k, klen, tojson(v));
              }));
+}
+
+void test_json_memleak() {
+    char filename[] = "../nativejson-benchmark-1.0.0/data/canada.json";
+    for (;;) {
+        putchar('.');
+        FILE *fp = fopen(filename, "r");
+        if (fp == NULL) {
+            printf("Error %d: %s\n", errno, strerror(errno));
+            return;
+        }
+        struct stringbuffer sb;
+        sbinit(&sb);
+        char cache[1024];
+        size_t numread;
+        while ((numread = fread(cache, 1, sizeof cache, fp)) > 0) {
+            sbappend_s(&sb, cache, numread);
+        }
+        fclose(fp);
+        vtojson(vfromjson_s(sb.base, sb.length));
+        gc();
+        sbclear(&sb);
+    }
 }
 
 int main() {
@@ -189,10 +217,6 @@ int main() {
     // dump();
     //     test_string();
     //     gc();
-    const char *jsonstr = "{\"Hello\" 2.7183, \"World\" 3.1416, \"\\\\\\/\" [true, {\"hi\":\"baby\"}, null, nul]}";
-    for (;;) {
-        puts(tojson(vfromjson(jsonstr)));
-        gc();
-    }
+    test_json_memleak();
     return 0;
 }

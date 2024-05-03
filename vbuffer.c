@@ -10,6 +10,15 @@ You should have received a copy of the GNU General Public License along with thi
 
 #include "var.h"
 
+// size是每单元大小
+void bfinit(struct buffer *pbuffer, size_t size) {
+    memset(pbuffer, 0, sizeof *pbuffer);
+    pbuffer->size = size;
+    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    alloc_s((void **)&(pbuffer->base), pbuffer->capacity, newcap, pbuffer->size);
+    pbuffer->capacity = newcap;
+}
+
 void *bfoffset(struct buffer *pbuffer, size_t index) {
     return (char *)pbuffer->base + index * pbuffer->size;
 }
@@ -36,13 +45,15 @@ void bfpush(struct buffer *pbuffer, void *pvalues, size_t nvalues) {
     exitif(pbuffer == NULL, EINVAL);
     exitif(pvalues == NULL, EINVAL);
     size_t newqty = pbuffer->length + nvalues;
-    size_t newcap = pbuffer->capacity;
-    while (newcap < newqty) {
-        newcap = newcap == 0 ? 1 : newcap << 1;
-        exitif(newcap == 0, ERANGE);
+    if (pbuffer->capacity < newqty) { // 修正每次都调用alloc_s的逻辑错误
+        size_t newcap = pbuffer->capacity;
+        while (newcap < newqty) {
+            newcap = newcap == 0 ? 1 : newcap << 1;
+            exitif(newcap == 0, ERANGE);
+        }
+        alloc_s((void **)&(pbuffer->base), pbuffer->capacity, newcap, pbuffer->size);
+        pbuffer->capacity = newcap;
     }
-    alloc_s((void **)&(pbuffer->base), pbuffer->capacity, newcap, pbuffer->size);
-    pbuffer->capacity = newcap;
     memcpy(bfoffset(pbuffer, pbuffer->length), pvalues, nvalues * pbuffer->size);
     pbuffer->length = newqty;
 }
@@ -76,9 +87,9 @@ void bfget(struct buffer *pbuffer, size_t index, void *pvalue) {
 }
 
 void bfdump(struct buffer *pbuffer) {
-    printf("    size: %d\n", pbuffer->size);
-    printf("capacity: %d\n", pbuffer->capacity);
-    printf("  length: %d\n", pbuffer->length);
+    printf("    size: %lld\n", pbuffer->size);
+    printf("capacity: %lld\n", pbuffer->capacity);
+    printf("  length: %lld\n", pbuffer->length);
     char *addr = (char *)pbuffer->base;
     for (int i = 0; i < pbuffer->capacity; i++) {
         printf("%8d:", i);

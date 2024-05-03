@@ -10,10 +10,18 @@ You should have received a copy of the GNU General Public License along with thi
 
 #include "var.h"
 
+static void onbinit(struct objnodebuffer *pb) {
+    memset(pb, 0, sizeof *pb);
+    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct objnode));
+    pb->capacity = newcap;
+}
+
 // 新建object
 struct var *onew() {
     struct var *pv = vnew();
     pv->type = vtobject;
+    onbinit(&(pv->ovalue));
     return pv;
 }
 
@@ -73,7 +81,7 @@ static struct findresult find(struct objnodebuffer *pb, const char *key, size_t 
         // printf("rep=%d,hash=%d\n", rep, hash);
         struct objnode *pon = &((pb->base)[hash]);
         struct stringbuffer *pkey = &(pon->key);
-        struct var *value = pon->value;
+        // struct var *value = pon->value;
         if (pkey->base == NULL) {
             return (struct findresult){.stat = fsemptynode, .hash = hash};
         } else if ((pkey->length == klen) && (memcmp(pkey->base, key, klen) == 0)) {
@@ -106,13 +114,14 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
         (pv->ovalue).base[ret.hash].value = pval;
         (pv->ovalue).length++;
     } else {
+        // logdebug("rehash");
         size_t newcap = (pv->ovalue).capacity;
         do {
             newcap = newcap == 0 ? 1 : newcap << 1;
             exitif(newcap == 0, ERANGE);
         } while (newcap < reqcap);
         // 重新哈希
-        struct objnodebuffer newoval = {NULL, 0, 0};
+        struct objnodebuffer newoval = {NULL, 0, 0}; // 此处不调用onbinit
         alloc_s((void **)&(newoval.base), 0, newcap, sizeof(struct objnode));
         newoval.capacity = newcap;
         for (size_t i = 0; i < (pv->ovalue).capacity; i++) {

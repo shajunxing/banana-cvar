@@ -14,6 +14,7 @@ You should have received a copy of the GNU General Public License along with thi
 struct var *anew(size_t num, ...) {
     struct var *pv = vnew();
     pv->type = vtarray;
+    vbinit(&(pv->avalue));
     va_list args;
     va_start(args, num);
     for (size_t i = 0; i < num; i++) {

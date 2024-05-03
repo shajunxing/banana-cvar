@@ -17,6 +17,7 @@ struct var *snew_s(const char *s, size_t slen) {
     // 如果长度为0，也会开辟长度1的数组
     struct var *pv = vnew();
     pv->type = vtstring;
+    sbinit(&(pv->svalue));
     sbappend_s(&(pv->svalue), s, slen);
     return pv;
 }
@@ -26,10 +27,10 @@ struct var *snew(const char *sz) {
     return snew_s(sz, strlen(sz));
 }
 
-char *svalue(struct var *pv) {
+const char *svalue(struct var *pv) {
     exitif(pv == NULL, EINVAL);
     exitif(pv->type != vtstring, EINVAL);
-    return (pv->svalue).base;
+    return (const char *)((pv->svalue).base);
 }
 
 size_t slength(struct var *pv) {

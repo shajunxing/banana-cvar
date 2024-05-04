@@ -99,3 +99,26 @@
             }                                                    \
         }                                                        \
     } while (0)
+
+// static bool isstartingnumchar(char ch) {
+//     return ch == '-' || (ch >= '0' && ch <= '9');
+// }
+
+// static bool isfollowingnumchar(char ch) {
+//     return isstartingnumchar(ch) || ch == '.' || ch == 'E' || ch == 'e' || ch == '+';
+// }
+
+// } else if (isstartingnumchar(*p)) {
+//     struct stringbuffer sb;
+//     sbinit(&sb);
+//     size_t left = offset;
+//     for (offset++; offset < jsonslen; offset++) {
+//         if (!isfollowingnumchar(*(base + offset))) {
+//             offset--;
+//             break;
+//         }
+//     }
+//     sbappend_s(&sb, p, offset + 1 - left);
+//     vbpush(&vb, nnew(atof(sb.base)));
+//     sbclear(&sb);
+//     trymerge = true;

@@ -4,6 +4,45 @@ English README | [中文自述文件](自述文件.md)
 
 [Project address](https://github.com/shajunxing/banana-cvar)
 
+## Updated May 4, 2024
+
+After unremitting efforts, the conversion of numbers and strings to and from is realized manually, and the processing speed of values is now much faster than that of CJSON.
+
+```
+./test.exe
+        ../nativejson-benchmark-1.0.0/data/twitter.json
+                test_cjson_dec      : 0.078125
+                test_cvar_dec       : 0.203125
+                                    : 260%
+                test_cjson_dec_enc  : 0.109375
+                test_cvar_dec_enc   : 0.187500
+                                    : 171%
+        ../nativejson-benchmark-1.0.0/data/citm_catalog.json
+                test_cjson_dec      : 0.140625
+                test_cvar_dec       : 0.375000
+                                    : 267%
+                test_cjson_dec_enc  : 0.218750
+                test_cvar_dec_enc   : 0.453125
+                                    : 207%
+        ../nativejson-benchmark-1.0.0/data/canada.json
+                test_cjson_dec      : 0.656250
+                test_cvar_dec       : 0.546875
+                                    : 83%
+                test_cjson_dec_enc  : 2.406250
+                test_cvar_dec_enc   : 0.906250
+                                    : 38%
+./test.py
+        ../nativejson-benchmark-1.0.0/data/twitter.json
+                test_python_dec     : 0.062500
+                test_python_dec_enc : 0.109375
+        ../nativejson-benchmark-1.0.0/data/citm_catalog.json
+                test_python_dec     : 0.125000
+                test_python_dec_enc : 0.250000
+        ../nativejson-benchmark-1.0.0/data/canada.json
+                test_python_dec     : 0.562500
+                test_python_dec_enc : 1.312500
+```
+
 ## Updated May 3, 2024
 
 Improved the codec of json, fixed a few bugs, and compared it with [cjson](https://github.com/DaveGamble/cJSON), I used a profiling sample taken from [nativejson-benchmark](https://github.com/miloyip/nativejson-benchmark). After continuous optimization, the current result is:

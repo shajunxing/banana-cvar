@@ -63,10 +63,42 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
         sbappend(psb, pv->bvalue ? "true" : "false");
         break;
     case vtnumber:
-        char *s = NULL;
-        int slen = asprintf(&s, "%lg", pv->nvalue);
-        sbappend_s(psb, s, slen);
-        free_s((void **)&s);
+        // char *s = NULL;
+        // int slen = asprintf(&s, "%lg", pv->nvalue);
+        // sbappend_s(psb, s, slen);
+        // free_s((void **)&s);
+        // 自己写
+        double num = pv->nvalue;
+        if (num < 0) {
+            sbappend(psb, "-");
+            num = -num;
+        }
+        int ilen = 0;
+        for (; num >= 1; num /= 10) {
+            ilen++;
+        }
+        if (ilen == 0) {
+            sbappend(psb, "0");
+        } else {
+            for (int i = 0; i < ilen; i++) {
+                num *= 10;
+                int inte = (int)num;
+                char ch = (char)(inte + '0');
+                sbappend_s(psb, &ch, 1);
+                num -= inte;
+            }
+        }
+        double prec = 0.01; // 精度
+        if (num > prec) {
+            sbappend(psb, ".");
+            for (int i = 0; i < 5 && num > prec; i++) {
+                num *= 10;
+                int inte = (int)num;
+                char ch = (char)(inte + '0');
+                sbappend_s(psb, &ch, 1);
+                num -= inte;
+            }
+        }
         break;
     case vtstring:
         sbappend(psb, "\"");
@@ -129,12 +161,12 @@ struct var *vtojson(struct var *pv) {
     return ps;
 }
 
-static bool isstartingnumchar(char ch) {
-    return ch == '-' || (ch >= '0' && ch <= '9');
+static inline bool isd(char ch) {
+    return ch >= '0' && ch <= '9';
 }
 
-static bool isfollowingnumchar(char ch) {
-    return isstartingnumchar(ch) || ch == '.' || ch == 'E' || ch == 'e' || ch == '+';
+static inline unsigned char tod(char ch) {
+    return ch - '0';
 }
 
 struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
@@ -194,19 +226,56 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
             }
             vbpush(&vb, s);
             trymerge = true;
-        } else if (isstartingnumchar(*p)) {
-            struct stringbuffer sb;
-            sbinit(&sb);
-            size_t left = offset;
+        } else if (*p == '-' || *p == '.' || isd(*p)) { // json没规定.开头，但我这里允许
+            // 替换stringbuffer和atof，是否有更好的性能？
+            int sign = 1, esign = 1;
+            double inte = 0, frac = 0, flen = 0.1; // 不用整型，因为算出来的精度差，另外cpu的浮点运算都很快
+            int expo = 0; // 注意pow(10, esign * expo)，一个unsigned和一个sign相乘会导致错误结果，致使pow的值inf
+            char expect = 'i'; // 当前期待哪类值
+            if (*p == '-') {
+                sign = -1;
+            } else if (*p == '.') {
+                expect = 'f';
+            } else {
+                inte = *p - '0';
+            }
             for (offset++; offset < jsonslen; offset++) {
-                if (!isfollowingnumchar(*(base + offset))) {
-                    offset--;
+                p = base + offset;
+                if (expect == 'i') {
+                    if (isd(*p)) {
+                        inte = inte * 10 + tod(*p);
+                    } else if (*p == '.') {
+                        expect = 'f';
+                    } else {
+                        break;
+                    }
+                } else if (expect == 'f') {
+                    if (isd(*p)) {
+                        frac = frac + tod(*p) * flen;
+                        flen *= 0.1;
+                    } else if (*p == 'E' || *p == 'e') {
+                        expect = 'e';
+                    } else {
+                        break;
+                    }
+                } else if (expect == 'e') {
+                    if (*p == '+') {
+                        continue;
+                    } else if (*p == '-') {
+                        esign = -1;
+                    } else if (isd(*p)) {
+                        expo = expo * 10 + tod(*p);
+                    } else {
+                        break;
+                    }
+                } else {
                     break;
                 }
             }
-            sbappend_s(&sb, p, offset + 1 - left);
-            vbpush(&vb, nnew(atof(sb.base)));
-            sbclear(&sb);
+            offset--; // 往前拨一位，不要超出数字的范围
+            double num = sign * (inte + frac) * pow(10, esign * expo);
+            // logdebug("sign:%d inte:%lf frac:%lf flen:%lf esign:%d expo:%d num:%lf", sign, inte, frac, flen, esign, expo, num);
+            vbpush(&vb, nnew(num));
             trymerge = true;
         } else if (*p == 't') {
             offset += 3;
@@ -251,7 +320,13 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
         }
     }
     // vbdump(&vb);
-    struct var *result = vbget(&vb, 0);
+    // dump();
+    struct var *result;
+    if (vb.length > 0) {
+        result = vbget(&vb, 0);
+    } else {
+        result = znew();
+    }
     vbclear(&vb);
     return result;
 }

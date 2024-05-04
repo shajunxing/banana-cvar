@@ -45,29 +45,6 @@ void test_string() {
     dump();
 }
 
-void test_json() {
-    vdeclare(a, anew(0));
-    puts(tojson(a));
-    apush(a, znew());
-    apush(a, bnew(true));
-    apush(a, bnew(false));
-    apush(a, nnew(3.141592654));
-    apush(a, snew("你好世界"));
-    puts(tojson(a));
-    vdeclare(b, anew(0));
-    apush(b, nnew(2.718281829));
-    apush(b, snew("Hello\"\\/Eaten\b\f\n\r\tWorld"));
-    apush(a, b);
-    puts(tojson(a));
-    puts(tojson(vfromjson("{\"H      ello\" {}, \"World\" 3.1416, \"\\\\\\/\" [true, {\"hi\":\"baby\"}, null, \"\\u0030\\u0034\"]}")));
-    puts(tojson(vfromjson("[[[],[]]]")));
-    puts(tojson(vfromjson("[3.14, \"foo\"]")));
-    puts(tojson(vfromjson("\"foo\"")));
-    puts(tojson(vfromjson("\"foo\\t\"")));
-    puts(tojson(vfromjson("\"foo\\u\"")));
-    puts(tojson(vfromjson("\"foo\\u0000bar\"")));
-}
-
 void test_object() {
     vdeclare(a, onew());
     oput(a, "foo", znew());
@@ -174,6 +151,32 @@ void test_foreach() {
              }));
 }
 
+void test_json() {
+    // vdeclare(a, anew(0));
+    // puts(tojson(a));
+    // apush(a, znew());
+    // apush(a, bnew(true));
+    // apush(a, bnew(false));
+    // apush(a, nnew(3.141592654));
+    // apush(a, snew("你好世界"));
+    // puts(tojson(a));
+    // vdeclare(b, anew(0));
+    // apush(b, nnew(2.718281829));
+    // apush(b, snew("Hello\"\\/Eaten\b\f\n\r\tWorld"));
+    // apush(a, b);
+    // puts(tojson(a));
+    // puts(tojson(vfromjson("{\"H      ello\" {}, \"World\" 3.1416, \"\\\\\\/\" [true, {\"hi\":\"baby\"}, null, \"\\u0030\\u0034\"]}")));
+    // puts(tojson(vfromjson("[[[],[]]]")));
+    // puts(tojson(vfromjson("[3.14, \"foo\"]")));
+    // puts(tojson(vfromjson("\"foo\"")));
+    // puts(tojson(vfromjson("\"foo\\t\"")));
+    // puts(tojson(vfromjson("\"foo\\u\"")));
+    // puts(tojson(vfromjson("\"foo\\u0000bar\"")));
+    // 测试数值转换是否正确
+    puts(tojson(vfromjson("[ .02, 0.12 11, -22, .33, -.44, 55.66, -77.88, 1.2e3, 1.2e+3, 1.2e-1,[[-65.613616999999977,43.420273000000009]]]")));
+    puts(tojson(vfromjson("[[1,1],[1,1],[1,1],[1,1],[1,1],[1,1],[1,1],[1,1],[1,1],[1,1],[1,1],[1,1]]")));
+}
+
 void test_json_memleak() {
     char filename[] = "../nativejson-benchmark-1.0.0/data/canada.json";
     for (;;) {
@@ -217,6 +220,8 @@ int main() {
     // dump();
     //     test_string();
     //     gc();
-    test_json_memleak();
+    test_json();
+    // printf("%lld\n", (int)-1 * (int)1);
+    // printf("%lf\n", 1 * (1 + 2 / pow(10, 1)) * pow(10, (int)-1 * (long long)1));
     return 0;
 }

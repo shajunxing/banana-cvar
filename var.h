@@ -14,6 +14,7 @@ You should have received a copy of the GNU General Public License along with thi
 // 比如vasprintf就需要声明_GNU_SOURCE
 #define _GNU_SOURCE
 #include <ctype.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>

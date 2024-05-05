@@ -10,7 +10,7 @@ You should have received a copy of the GNU General Public License along with thi
 
 #include "var.h"
 
-static void sbappendescape_s(struct stringbuffer *psb, const char *s, size_t slen) {
+static void esc(struct stringbuffer *psb, const char *s, size_t slen) {
     char *base = (char *)s;
     size_t offs = 0;
     size_t offset = 0;
@@ -53,6 +53,14 @@ static void sbappendescape_s(struct stringbuffer *psb, const char *s, size_t sle
     sbappend_s(psb, base + offs, offset - offs);
 }
 
+static inline bool isdnum(double d) {
+    return d >= 0 && d < 10;
+}
+
+static inline char todchar(double d) {
+    return isdnum(d) ? (char)d + '0' : '0';
+}
+
 static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv) {
     vbpush(pvb, pv);
     switch (pv->type) {
@@ -63,46 +71,48 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
         sbappend(psb, pv->bvalue ? "true" : "false");
         break;
     case vtnumber:
-        // char *s = NULL;
-        // int slen = asprintf(&s, "%lg", pv->nvalue);
-        // sbappend_s(psb, s, slen);
-        // free_s((void **)&s);
-        // 自己写
+        // 自己写，取代asprintf
+        // 为了防止数值溢出，不用整型而是用double类型，以及使用math函数计算而非强制类型转换
         double num = pv->nvalue;
         if (num < 0) {
             sbappend(psb, "-");
             num = -num;
         }
+        double inte;
+        double frac = modf(num, &inte);
         int ilen = 0;
         for (; num >= 1; num /= 10) {
             ilen++;
         }
+        // logdebug("inte=%lf frac=%lf ilen=%d", inte, frac, ilen);
         if (ilen == 0) {
             sbappend(psb, "0");
         } else {
-            for (int i = 0; i < ilen; i++) {
-                num *= 10;
-                int inte = (int)num;
-                char ch = (char)(inte + '0');
+            for (int i = ilen - 1; i >= 0; i--) {
+                double m = pow(10, i);
+                double d = trunc(inte / m) - trunc(inte / (m * 10)) * 10;
+                char ch = todchar(d);
+                // logdebug("i=%d m=%lf d=%lf %c", i, m, d, ch);
                 sbappend_s(psb, &ch, 1);
-                num -= inte;
             }
         }
         double prec = 0.01; // 精度
-        if (num > prec) {
+        if (frac > prec) {
             sbappend(psb, ".");
-            for (int i = 0; i < 5 && num > prec; i++) {
-                num *= 10;
-                int inte = (int)num;
-                char ch = (char)(inte + '0');
+            for (int i = 0; i < 5 && frac > prec; i++) {
+                frac *= 10;
+                double fi;
+                double ff = modf(frac, &fi);
+                // logdebug("frac=%lf fi=%lf ff=%lf", frac, fi, ff);
+                char ch = todchar(fi);
                 sbappend_s(psb, &ch, 1);
-                num -= inte;
+                frac = ff;
             }
         }
         break;
     case vtstring:
         sbappend(psb, "\"");
-        sbappendescape_s(psb, (pv->svalue).base, (pv->svalue).length);
+        esc(psb, (pv->svalue).base, (pv->svalue).length);
         sbappend(psb, "\"");
         break;
     case vtarray:
@@ -135,7 +145,7 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
             }
             j++;
             sbappend(psb, "\"");
-            sbappendescape_s(psb, (pv->ovalue).base[i].key.base, (pv->ovalue).base[i].key.length);
+            esc(psb, (pv->ovalue).base[i].key.base, (pv->ovalue).base[i].key.length);
             sbappend(psb, "\":");
             toj(psb, pvb, (pv->ovalue).base[i].value);
         }
@@ -161,11 +171,11 @@ struct var *vtojson(struct var *pv) {
     return ps;
 }
 
-static inline bool isd(char ch) {
+static inline bool isdchar(char ch) {
     return ch >= '0' && ch <= '9';
 }
 
-static inline unsigned char tod(char ch) {
+static inline double todnum(char ch) {
     return ch - '0';
 }
 
@@ -226,7 +236,7 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
             }
             vbpush(&vb, s);
             trymerge = true;
-        } else if (*p == '-' || *p == '.' || isd(*p)) { // json没规定.开头，但我这里允许
+        } else if (*p == '-' || *p == '.' || isdchar(*p)) { // json没规定.开头，但我这里允许
             // 替换stringbuffer和atof，是否有更好的性能？
             int sign = 1, esign = 1;
             double inte = 0, frac = 0, flen = 0.1; // 不用整型，因为算出来的精度差，另外cpu的浮点运算都很快
@@ -242,16 +252,18 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
             for (offset++; offset < jsonslen; offset++) {
                 p = base + offset;
                 if (expect == 'i') {
-                    if (isd(*p)) {
-                        inte = inte * 10 + tod(*p);
+                    if (isdchar(*p)) {
+                        inte = inte * 10 + todnum(*p);
                     } else if (*p == '.') {
                         expect = 'f';
+                    } else if (*p == 'E' || *p == 'e') {
+                        expect = 'e';
                     } else {
                         break;
                     }
                 } else if (expect == 'f') {
-                    if (isd(*p)) {
-                        frac = frac + tod(*p) * flen;
+                    if (isdchar(*p)) {
+                        frac = frac + todnum(*p) * flen;
                         flen *= 0.1;
                     } else if (*p == 'E' || *p == 'e') {
                         expect = 'e';
@@ -263,8 +275,8 @@ struct var *vfromjson_s(const char *jsonstr, size_t jsonslen) {
                         continue;
                     } else if (*p == '-') {
                         esign = -1;
-                    } else if (isd(*p)) {
-                        expo = expo * 10 + tod(*p);
+                    } else if (isdchar(*p)) {
+                        expo = expo * 10 + todnum(*p);
                     } else {
                         break;
                     }

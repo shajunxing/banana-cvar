@@ -324,10 +324,37 @@ void markinuse(struct var *pv) {
 // 垃圾回收
 void gc() {
     // 删掉登记指向地址和实际指向地址不匹配的引用
+    // 测试两次函数调用，example.c，第二次能否清掉堆栈，发现GCC -O1之下，很奇怪的好像没有清理，但是dump的信息addr与value并不相等，但是如果加上下面任意两个位置的logdebug，却又好了，感觉好像是-O1有某种类似COW的缓存机制，O0 O2 O3都没有问题，就O1有。
+    /* 测试代码如下：
+    #include "var.h"
+    void call1() {
+        odeclare(obj);
+        oput(obj, "first", bnew(true));
+        oput(obj, "second", nnew(3.14));
+        oput(obj, "third", anew(3, snew("hello"), snew("world"), nnew(2.718)));
+        dump();
+        printf("%s\n\n", tojson(obj));
+    }
+    void call2() {
+        char foo[100];
+        memset(foo, 0xff, sizeof foo);
+    }
+    int main() {
+        call1();
+        call2(); // emulate flush call stack
+        gc(); // and all references will be invalidated
+        dump();
+        return 0;
+    }
+    */
+    // 好像调试输出同样也是函数调用（fprintf），也会改变堆栈
+    // 经过gdb的检查“disassemble main”，-O1的call2被优化掉了，-O2也会优化，但是stack也会在函数退出后清零，而-O1不清零
+    // logdebug("prefroot=%p addr=%p value=%p\n", prefroot, *(prefroot->addr), prefroot->value);
     for (struct ref *pr = prefroot; pr;) {
         if (*(pr->addr) == pr->value) {
             pr = pr->next;
         } else {
+            // logdebug("del ref %p\n", &pr);
             struct ref *p = pr;
             if (pr == prefroot) {
                 // 必定pr->prev == NULL

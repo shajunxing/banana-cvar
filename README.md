@@ -65,8 +65,8 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |void gc()||Garbage Collection|
 |enum vtype vtype(struct var *pv)||Returns the variable type in the enum format, with the following values: vtnull, vtboolean, vtnumber, vtstring, vtarray, and vtobject|
 |void stacktrace()||Print stack trace information|
-|void vdump(const char *prefix, const struct var *pv)||Print debug information for a single dynamic variable|
-|void wdump(const char *suffix)<br>dump()||Prints all constants, variables, and references|
+|vdump(const char *prefix, const struct var *pv, const char *suffix)||Print debug information for a single dynamic variable|
+|wdump(const char *prefix, const char *suffix)<br>dump()||Prints all constants, variables, and references|
 
 ## Boolean
 
@@ -82,7 +82,7 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |-|-|-|
 |double nvalue(struct var *pv)||Returns the original value of the number variable|
 
-## Strings
+## String
 
 All of the internal buffer storage structures I've designed, including strings, arrays, and objects, are uniform and optimized, but I haven't thought of a more appropriate API interface for string connections just yet.
 
@@ -92,8 +92,9 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |size_t slength(struct var *pv)|a.length()|returns string length|
 |struct var *sconcat(size_t num, ...)|var a = "hi" <br>var b = "all" <br>var c = a + b|concatenate one or more <br>strings sdeclare(a, "hi")<br>sdeclare(b, "all")<br>vdeclare(c, sconcat(2, a, b))|
 |struct var *sformat(const char *fmt, ...)||Return the formatted string, with the same parameters as printf|
+|struct var *smatch_s(const char *p, const char *src, size_t srcl)<br>struct var *smatch(const char *p, const char *srcz)||String pattern matching, p is the pattern, src is the string, using the lua 5.1 code, slightly adjusted, position matching is disabled, and the return value is the capture list, which does not contain the original string, see <https://www.lua.org/manual/5.1/manual.html#5.4.1>|
 
-## Arrays
+## Array
 
 Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |-|-|-|
@@ -104,9 +105,9 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |void aput(struct var *pv, size_t idx, struct var *pval)|v[idx] = val|array specifies that the subscript is written to replace the original value, and the program exits | if the subscript is out of bounds
 |struct var *aget(struct var *pv, size_t idx)|v[idx]|takes the value of the array to specify the subscript, and the program exits if the subscript is out of bounds|
 |void asort(struct var *pv, int (*comp)(const struct var *, const struct var *))|v.sort()|array sorting, comp is a user-specified sorting function, the return value convention is the same as qsort, if it is NULL, then call the default sorting function, the rules are: 1. Different types, according to null, boolean, number, 2. The string is called memcmp with the minimum length +1 before true, that is, 0 at the end participates in the comparison, and the array and object only compare the number of elements |
-|void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v))|for (i, v in arr) {...}|Sequentially iterate through all indexes and values of the array|
+|void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v, void *xargs), void *xargs)|for (i, v in arr) {...}|Sequentially iterate through all indexes and values of the array|
 
-## Objects
+## Object
 
 Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |-|-|-|
@@ -114,7 +115,7 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |size_t olength(struct var *pv)|v.length()|returns the number of elements of the object|
 |void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval)<br>void oput(struct var *pv, const char *key, struct var *pval)|v[key] = val|write key-value pair|
 |struct var *oget_s(struct var *pv, const char *key, size_t klen)<br>struct var *oget(struct var *pv, const char *key)|v[key]|read the value corresponding to the key, note that NULL may be returned, and the program must make a judgment|
-|void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v))|for (k, klen, v in obj) {...}|Iterate through all keys and values of the object|
+|void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v, void *xargs), void *xargs)|for (k, klen, v in obj) {...}|Iterate through all keys and values of the object|
 
 ## Json
 

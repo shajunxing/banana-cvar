@@ -157,7 +157,7 @@ static void toj(struct stringbuffer *psb, struct varbuffer *pvb, struct var *pv)
 
 // 转换为JSON兼容的字符串格式
 struct var *vtojson(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
+    exitif(pv == NULL);
     struct stringbuffer sb;
     sbinit(&sb);
     struct varbuffer vb;

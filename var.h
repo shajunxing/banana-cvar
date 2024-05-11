@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License along with thi
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,7 +61,8 @@ You should have received a copy of the GNU General Public License along with thi
      _a < _b ? _a : _b; })
 #endif
 
-#ifdef DEBUG
+// NDEBUG是习惯，比如assert宏
+#ifndef NDEBUG
     #define logdebug(format, ...) \
         fprintf(stdout, "DEBUG %s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #else
@@ -72,33 +74,35 @@ You should have received a copy of the GNU General Public License along with thi
 #define logerror(format, ...) \
     fprintf(stderr, "ERROR %s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 
-// 参考 https://stackoverflow.com/questions/55417186/is-this-a-valid-way-of-checking-if-a-variadic-macro-argument-list-is-empty
-#define is_empty(...) (sizeof((char[]){#__VA_ARGS__}) == 1)
-// 参考 https://stackoverflow.com/questions/27049491/can-c-c-preprocessor-macros-have-default-parameter-values
-#define first_arg(a, ...) a
-#define arg_default(a, ...) first_arg(__VA_ARGS__ __VA_OPT__(, ) a) // 确保errno = 后面始终有个值，否则语法错误
-
+#ifndef NDEBUG
 shared void stacktrace();
+#else
+    #define stacktrace() \
+        do {             \
+        } while (0)
+#endif
+
+#define logexit(format, ...)             \
+    do {                                 \
+        logerror(format, ##__VA_ARGS__); \
+        stacktrace();                    \
+        exit(EXIT_FAILURE);              \
+    } while (0)
 
 // 如果cond为真则退出程序，可选参数为errno，如无则保留当前值不变
-#define exitif(cond, ...)                                                   \
-    do {                                                                    \
-        if (cond) {                                                         \
-            if (!is_empty(__VA_ARGS__)) {                                   \
-                errno = arg_default(0, __VA_ARGS__);                        \
-            }                                                               \
-            logerror("\"%s\" %s, exit(%d)", #cond, strerror(errno), errno); \
-            stacktrace();                                                   \
-            exit(errno);                                                    \
-        }                                                                   \
+#define exitif(cond)        \
+    do {                    \
+        if (cond) {         \
+            logexit(#cond); \
+        }                   \
     } while (0)
 
 shared void free_s(void **pp);
 shared void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz);
 
-// 为了优化性能，设置buffer的初始容量，该数值为2的幂的指数
+// 为了优化性能，设置buffer的初始容量，建议为2的幂，因为容量值的增长都是右移一位
 // 经测试容量8比较合适，太大反而速度降低了
-#define buffer_initial_capacity_exponent 3
+#define BUFFER_INITIAL_CAPACITY 8
 
 // 通用buffer类型，计划未来替换下面的专用buffer
 // 但是有一个问题，就是buffer里面记录size，与初始化时侯全部memset为0有点不协调
@@ -197,9 +201,10 @@ struct ref {
     struct ref *next;
 };
 
-shared void vdump(const char *prefix, const struct var *pv);
-shared void wdump(const char *suffix);
-#define dump() wdump(__FILE__ "(" xstr(__LINE__) ")")
+shared void vdump(const char *prefix, const struct var *pv, const char *suffix);
+shared void rdump(const char *prefix, const struct ref *pr, const char *suffix);
+shared void wdump(const char *prefix, const char *suffix);
+#define dump() wdump(__FILE__ "," xstr(__LINE__) ":", "")
 
 shared void gc();
 
@@ -210,7 +215,7 @@ shared void refer(struct var **ppv, char *descr, struct var *pval);
 #define vassign(a, b)                                            \
     do {                                                         \
         struct var *_b = (b);                                    \
-        exitif(_b == NULL, EINVAL);                              \
+        exitif(_b == NULL);                                      \
         refer(&(a), __FILE__ "," xstr(__LINE__) "," str(a), _b); \
     } while (0)
 // var a = b
@@ -243,6 +248,8 @@ shared const char *svalue(struct var *pv);
 shared size_t slength(struct var *pv);
 shared struct var *sconcat(size_t num, ...);
 shared struct var *sformat(const char *fmt, ...);
+shared struct var *smatch_s(const char *p, const char *src, size_t srcl);
+shared struct var *smatch(const char *p, const char *srcz);
 
 shared struct var *anew(size_t num, ...);
 #define adeclare(a) vdeclare(a, anew(0))
@@ -254,7 +261,7 @@ shared struct var *apop(struct var *pv);
 shared void aput(struct var *pv, size_t idx, struct var *pval);
 shared struct var *aget(struct var *pv, size_t idx);
 shared void asort(struct var *pv, int (*comp)(const struct var *, const struct var *));
-shared void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v));
+shared void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v, void *xargs), void *xargs);
 
 shared struct var *onew();
 #define odeclare(a) vdeclare(a, onew())
@@ -265,7 +272,7 @@ shared void oput_s(struct var *pv, const char *key, size_t klen, struct var *pva
 shared void oput(struct var *pv, const char *key, struct var *pval);
 shared struct var *oget_s(struct var *pv, const char *key, size_t klen);
 shared struct var *oget(struct var *pv, const char *key);
-shared void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v));
+shared void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v, void *xargs), void *xargs);
 
 shared struct var *vtojson(struct var *pv);
 #define tojson(pv) svalue(vtojson(pv))

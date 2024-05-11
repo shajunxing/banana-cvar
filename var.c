@@ -10,11 +10,10 @@ You should have received a copy of the GNU General Public License along with thi
 
 #include "var.h"
 
-#include <backtrace.h>
-#include <backtrace-supported.h>
-
+#ifndef NDEBUG
+    #include <backtrace.h>
+    #include <backtrace-supported.h>
 static struct backtrace_state *bt_state = NULL;
-
 // 參考backtrace_print源代码，error_callback如果不设置会导致release版本segment fault
 static void btcb_error(void *data, const char *msg, int errnum) {
     if (errnum > 0) {
@@ -23,23 +22,19 @@ static void btcb_error(void *data, const char *msg, int errnum) {
         fprintf(stderr, "%s\n", msg);
     }
 }
-
 static int btcb_full(void *data, uintptr_t pc, const char *filename, int lineno, const char *function) {
     fprintf(stderr, "%s,%d %s\n", filename ?: "?", lineno, function ?: "?");
     return 0;
 }
-
 // static void btcb_syminfo(void *data, uintptr_t pc, const char *symname, uintptr_t symval, uintptr_t symsize) {
 //     fprintf(stderr, "%s %p %lld\n", symname, (void *)symval, symsize);
 // }
-
 static int btcb_simple(void *data, uintptr_t pc) {
     fprintf(stderr, "\t%p ", (void *)pc);
     backtrace_pcinfo(bt_state, pc, btcb_full, btcb_error, NULL);
     // backtrace_syminfo(bt_state, pc, btcb_syminfo, btcb_error, NULL);
     return 0;
 }
-
 void stacktrace() {
     if (!bt_state) {
         bt_state = backtrace_create_state(NULL, BACKTRACE_SUPPORTS_THREADS, btcb_error, NULL);
@@ -47,10 +42,11 @@ void stacktrace() {
     backtrace_simple(bt_state, 1, btcb_simple, btcb_error, NULL);
     fprintf(stderr, "\n");
 }
+#endif
 
 // 安全释放内存，并置NULL
 void free_s(void **pp) {
-    exitif(pp == NULL, EINVAL);
+    exitif(pp == NULL);
     if (*pp) {
         free(*pp);
         *pp = NULL;
@@ -64,10 +60,10 @@ void free_s(void **pp) {
 // 注意memset里面void *类型的加法操作结果异常，经测试是会把加数放大16倍，单写程序却无法复现，经查void *类型的算术运算是非法的，参见 https://stackoverflow.com/questions/3523145/pointer-arithmetic-for-void-pointer-in-c
 void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
     // logdebug("oldnum=%lld newnum=%lld sz=%lld", oldnum, newnum, sz);
-    exitif(pp == NULL, EINVAL);
-    exitif((*pp != NULL) && (oldnum == 0), EINVAL);
-    exitif((*pp == NULL) && (oldnum > 0), EINVAL);
-    exitif(sz == 0, EINVAL);
+    exitif(pp == NULL);
+    exitif((*pp != NULL) && (oldnum == 0));
+    exitif((*pp == NULL) && (oldnum > 0));
+    exitif(sz == 0);
     size_t oldsize = oldnum * sz;
     size_t newsize = newnum * sz;
     if (newsize == oldsize) { // 进一步防止诸如sbappend_s每次都调用alloc_s的逻辑错误
@@ -79,7 +75,7 @@ void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
         } else {
             *pp = malloc(newsize);
         }
-        exitif(*pp == NULL, ENOMEM);
+        exitif(*pp == NULL);
         if (newsize > oldsize) {
             memset((char *)*pp + oldsize, 0, newsize - oldsize);
         }
@@ -90,13 +86,13 @@ void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
 
 void sbinit(struct stringbuffer *psb) {
     memset(psb, 0, sizeof *psb);
-    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    size_t newcap = BUFFER_INITIAL_CAPACITY;
     alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
     psb->capacity = newcap;
 }
 
 void sbclear(struct stringbuffer *psb) {
-    exitif(psb == NULL, EINVAL);
+    exitif(psb == NULL);
     free_s((void **)&(psb->base));
     psb->capacity = 0;
     psb->length = 0;
@@ -104,8 +100,8 @@ void sbclear(struct stringbuffer *psb) {
 
 void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen) {
     // logdebug("*s=%c slen=%lld", *s, slen);
-    exitif(psb == NULL, EINVAL);
-    exitif((s == NULL) && (slen > 0), EINVAL);
+    exitif(psb == NULL);
+    exitif((s == NULL) && (slen > 0));
     if (slen == 0) { // 比如json处理转义符的代码，很多长度0的情况
         return;
     }
@@ -115,7 +111,7 @@ void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen) {
         size_t newcap = psb->capacity;
         while (newcap < reqcap) {
             newcap = newcap == 0 ? 1 : newcap << 1;
-            exitif(newcap == 0, ERANGE);
+            exitif(newcap == 0);
         }
         alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
         psb->capacity = newcap;
@@ -125,8 +121,8 @@ void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen) {
 }
 
 void sbappend(struct stringbuffer *psb, const char *sz) {
-    exitif(psb == NULL, EINVAL);
-    exitif(sz == NULL, EINVAL);
+    exitif(psb == NULL);
+    exitif(sz == NULL);
     sbappend_s(psb, sz, strlen(sz));
 }
 
@@ -136,13 +132,13 @@ void sbdump(struct stringbuffer *psb) {
 
 void vbinit(struct varbuffer *pb) {
     memset(pb, 0, sizeof *pb);
-    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    size_t newcap = BUFFER_INITIAL_CAPACITY;
     alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct var *));
     pb->capacity = newcap;
 }
 
 void vbclear(struct varbuffer *pb) {
-    exitif(pb == NULL, EINVAL);
+    exitif(pb == NULL);
     free_s((void **)&(pb->base));
     pb->capacity = 0;
     pb->length = 0;
@@ -150,13 +146,13 @@ void vbclear(struct varbuffer *pb) {
 
 void vbpush(struct varbuffer *pb, struct var *v) {
     // logdebug("");
-    exitif(pb == NULL, EINVAL);
+    exitif(pb == NULL);
     size_t newlen = pb->length + 1;
     if (pb->capacity < newlen) { // 修正每次都调用alloc_s的逻辑错误
         size_t newcap = pb->capacity;
         while (newcap < newlen) {
             newcap = newcap == 0 ? 1 : newcap << 1;
-            exitif(newcap == 0, ERANGE);
+            exitif(newcap == 0);
         }
         alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct var *));
         pb->capacity = newcap;
@@ -166,8 +162,8 @@ void vbpush(struct varbuffer *pb, struct var *v) {
 }
 
 struct var *vbpop(struct varbuffer *pb) {
-    exitif(pb == NULL, EINVAL);
-    exitif(pb->length == 0, ERANGE);
+    exitif(pb == NULL);
+    exitif(pb->length == 0);
     pb->length--;
     struct var *ret = (pb->base)[pb->length];
     memset(&((pb->base)[pb->length]), 0, sizeof(struct var *));
@@ -175,20 +171,20 @@ struct var *vbpop(struct varbuffer *pb) {
 }
 
 void vbput(struct varbuffer *pb, struct var *v, size_t i) {
-    exitif(pb == NULL, EINVAL);
-    exitif(i >= pb->length, ERANGE);
+    exitif(pb == NULL);
+    exitif(i >= pb->length);
     (pb->base)[i] = v;
 }
 
 struct var *vbget(struct varbuffer *pb, size_t i) {
-    exitif(pb == NULL, EINVAL);
-    exitif(i >= pb->length, ERANGE);
+    exitif(pb == NULL);
+    exitif(i >= pb->length);
     return (pb->base)[i];
 }
 
 // 查找失败返回-1
 ssize_t vbfind(struct varbuffer *pb, struct var *v) {
-    exitif(pb == NULL, EINVAL);
+    exitif(pb == NULL);
     for (size_t i = 0; i < pb->length; i++) {
         if (0 == memcmp(&((pb->base)[i]), &v, sizeof(struct var *))) {
             return i;
@@ -202,9 +198,8 @@ void vbdump(struct varbuffer *pb) {
     printf("  length: %lld\n", pb->length);
     for (int i = 0; i < pb->length; i++) {
         printf("%8d: ", i);
-        vdump("", (pb->base)[i]);
+        vdump("", (pb->base)[i], "\n");
     }
-    printf("\n");
 }
 
 // 全局变量取名尽量不用缩写，以便与函数内参数名区分
@@ -218,9 +213,12 @@ static const struct var varnull = {.inuse = true, .type = vtnull};
 static const struct var vartrue = {.inuse = true, .type = vtboolean, .bvalue = true};
 static const struct var varfalse = {.inuse = true, .type = vtboolean, .bvalue = false};
 
-void vdump(const char *prefix, const struct var *pv) {
+void vdump(const char *prefix, const struct var *pv, const char *suffix) {
+    if (prefix) {
+        printf("%s", prefix);
+    }
     // 应该用%p而非%08x，因为地址空间非常大，栈由底递增，堆由顶递减
-    printf("%s%p %d ", prefix, pv, pv->inuse);
+    printf("%p %d ", pv, pv->inuse);
     switch (pv->type) {
     case vtnull:
         printf("z null");
@@ -262,37 +260,49 @@ void vdump(const char *prefix, const struct var *pv) {
         printf("?");
         break;
     }
-    printf("\n");
+    if (suffix) {
+        printf("%s", suffix);
+    }
 }
 
-void rdump(const char *prefix, const struct ref *pr) {
-    printf("%s%p   r %p->%p,%p %p,%p %s\n", prefix, pr, pr->addr, *(pr->addr), pr->value, pr->next, pr->prev, pr->descr);
+void rdump(const char *prefix, const struct ref *pr, const char *suffix) {
+    if (prefix) {
+        printf("%s", prefix);
+    }
+    printf("%p   r %p->%p,%p %p,%p %s", pr, pr->addr, *(pr->addr), pr->value, pr->next, pr->prev, pr->descr);
+    if (suffix) {
+        printf("%s", suffix);
+    }
 }
 
-void wdump(const char *suffix) {
-    printf("%s(%d) %s(): %s\n", __FILE__, __LINE__, __func__, suffix);
-    vdump("     varnull: ", &varnull);
-    vdump("     vartrue: ", &vartrue);
-    vdump("    varfalse: ", &varfalse);
+void wdump(const char *prefix, const char *suffix) {
+    if (prefix) {
+        printf("%s\n", prefix);
+    }
+    vdump("     varnull: ", &varnull, "\n");
+    vdump("     vartrue: ", &vartrue, "\n");
+    vdump("    varfalse: ", &varfalse, "\n");
     for (struct var *pv = pvarroot; pv; pv = pv->next) {
         if (pv == pvarroot) {
-            vdump("    pvarroot: ", pv);
+            vdump("    pvarroot: ", pv, "\n");
         } else {
-            vdump("              ", pv);
+            vdump("              ", pv, "\n");
         }
     }
     for (struct ref *pr = prefroot; pr; pr = pr->next) {
         if (pr == prefroot) {
-            rdump("    prefroot: ", pr);
+            rdump("    prefroot: ", pr, "\n");
         } else {
-            rdump("              ", pr);
+            rdump("              ", pr, "\n");
         }
     }
-    printf("\n");
+    if (suffix) {
+        printf("%s", suffix);
+    }
 }
 
 // array和object递归，碰到inuse为1的意味着套娃了，不递归
-void markinuse(struct var *pv) {
+static void markinuse(struct var *pv) {
     // 修改全局常量会程序死掉
     if (pv == &varnull || pv == &vartrue || pv == &varfalse) {
         return;
@@ -371,9 +381,9 @@ void gc() {
         }
     }
     // 将所有inuse置0
-    for (struct var *pv = pvarroot; pv; pv = pv->next) {
-        pv->inuse = false;
-    }
+    // for (struct var *pv = pvarroot; pv; pv = pv->next) {
+    //     pv->inuse = false;
+    // }
     // 从引用开始递归把inuse置1
     for (struct ref *pr = prefroot; pr; pr = pr->next) {
         markinuse(pr->value);
@@ -382,6 +392,7 @@ void gc() {
     // 对于array/object不需要递归进去，因为里面的值也是托管的（除了object的key需要手工释放）
     for (struct var *pv = pvarroot; pv;) {
         if (pv->inuse) {
+            pv->inuse = false;
             pv = pv->next;
         } else {
             switch (pv->type) {
@@ -416,9 +427,9 @@ void gc() {
 // 引用很有可能重复，比如函数内的var()宏，多次调用该函数肯定是重复的，不同函数的栈地址也会重复，所以此处的descr只能表示“最新的”
 // TODO: 比如array/object内部创建怎么办？标记-清除算法
 void refer(struct var **ppv, char *descr, struct var *pval) {
-    exitif(ppv == NULL, EINVAL);
-    exitif(descr == NULL, EINVAL);
-    exitif(pval == NULL, EINVAL);
+    exitif(ppv == NULL);
+    exitif(descr == NULL);
+    exitif(pval == NULL);
     // 记录下（或查询已记录的）该引用的信息，包括地址、值等
     // TODO: 需要加速吗？静态变量并不会太多，应该不需要
     struct ref *pr;
@@ -456,7 +467,7 @@ struct var *vnew() {
 }
 
 enum vtype vtype(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
+    exitif(pv == NULL);
     return pv->type;
 }
 
@@ -471,8 +482,8 @@ struct var *bnew(bool b) {
 }
 
 bool bvalue(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtboolean, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtboolean);
     return pv->bvalue;
 }
 
@@ -485,7 +496,7 @@ struct var *nnew(double n) {
 }
 
 double nvalue(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtnumber, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtnumber);
     return pv->nvalue;
 }

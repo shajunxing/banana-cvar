@@ -4,6 +4,10 @@
 
 [Project address](https://github.com/shajunxing/banana-cvar)
 
+## Updated May 11, 2024
+
+Added string pattern matching.
+
 ## Updated May 4, 2024
 
 After unremitting efforts, the conversion of numbers and strings to and from is realized manually, and the processing speed of values is now much faster than that of CJSON.

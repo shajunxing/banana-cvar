@@ -12,7 +12,7 @@ You should have received a copy of the GNU General Public License along with thi
 
 static void onbinit(struct objnodebuffer *pb) {
     memset(pb, 0, sizeof *pb);
-    size_t newcap = 1 << buffer_initial_capacity_exponent;
+    size_t newcap = BUFFER_INITIAL_CAPACITY;
     alloc_s((void **)&(pb->base), pb->capacity, newcap, sizeof(struct objnode));
     pb->capacity = newcap;
 }
@@ -26,15 +26,15 @@ struct var *onew() {
 }
 
 static void onbclear(struct objnodebuffer *pb) {
-    exitif(pb == NULL, EINVAL);
+    exitif(pb == NULL);
     free_s((void **)&(pb->base));
     pb->capacity = 0;
     pb->length = 0;
 }
 
 void oclear(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtobject, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtobject);
     for (size_t i = 0; i < pv->ovalue.capacity; i++) {
         sbclear(&((pv->ovalue).base[i].key));
     }
@@ -42,8 +42,8 @@ void oclear(struct var *pv) {
 }
 
 size_t olength(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtobject, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtobject);
     return (pv->ovalue).length;
 }
 
@@ -93,10 +93,10 @@ static struct findresult find(struct objnodebuffer *pb, const char *key, size_t 
 }
 
 void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtobject, EINVAL);
-    exitif(key == NULL, EINVAL);
-    exitif(pval == NULL, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtobject);
+    exitif(key == NULL);
+    exitif(pval == NULL);
     // 先查找key存在与否
     struct findresult ret = find(&(pv->ovalue), key, klen);
     if (ret.stat == fskeymatch) {
@@ -109,7 +109,7 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
     size_t reqcap = newlen << 1; // 需要的容量至少是长度的2倍，测试时可设置为相等，以得到fsnotfound的状态
     if ((pv->ovalue).capacity >= reqcap) {
         // 无需扩容
-        exitif(ret.stat != fsemptynode, ERANGE); // 这是不应该发生的
+        exitif(ret.stat != fsemptynode); // 这是不应该发生的
         sbappend_s(&((pv->ovalue).base[ret.hash].key), key, klen);
         (pv->ovalue).base[ret.hash].value = pval;
         (pv->ovalue).length++;
@@ -118,7 +118,7 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
         size_t newcap = (pv->ovalue).capacity;
         do {
             newcap = newcap == 0 ? 1 : newcap << 1;
-            exitif(newcap == 0, ERANGE);
+            exitif(newcap == 0);
         } while (newcap < reqcap);
         // 重新哈希
         struct objnodebuffer newoval = {NULL, 0, 0}; // 此处不调用onbinit
@@ -128,7 +128,7 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
             struct objnode node = (pv->ovalue).base[i];
             if (node.key.base) { // 该节点是存在的
                 struct findresult ret = find(&newoval, node.key.base, node.key.length);
-                exitif(ret.stat != fsemptynode, ERANGE); // 这是不应该发生的
+                exitif(ret.stat != fsemptynode); // 这是不应该发生的
                 newoval.base[ret.hash] = node;
                 newoval.length++;
             }
@@ -137,7 +137,7 @@ void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval) {
         pv->ovalue = newoval; // newoval.address已托管，不需要释放
         // 再次查找
         struct findresult ret = find(&(pv->ovalue), key, klen);
-        exitif(ret.stat != fsemptynode, ERANGE); // 这是不应该发生的
+        exitif(ret.stat != fsemptynode); // 这是不应该发生的
         sbappend_s(&((pv->ovalue).base[ret.hash].key), key, klen);
         (pv->ovalue).base[ret.hash].value = pval;
         (pv->ovalue).length++;
@@ -150,9 +150,9 @@ void oput(struct var *pv, const char *key, struct var *pval) {
 
 // 返回NULL表示未找到，注意返回值务必检查NULL，否则别的以var*为参数的函数都会退出
 struct var *oget_s(struct var *pv, const char *key, size_t klen) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtobject, EINVAL);
-    exitif(key == NULL, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtobject);
+    exitif(key == NULL);
     struct findresult ret = find(&(pv->ovalue), key, klen);
     if (ret.stat == fskeymatch) {
         return (pv->ovalue).base[ret.hash].value;
@@ -165,15 +165,15 @@ struct var *oget(struct var *pv, const char *key) {
     return oget_s(pv, key, strlen(key));
 }
 
-void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v)) {
-    exitif(obj == NULL, EINVAL);
-    exitif(obj->type != vtobject, EINVAL);
+void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v, void *xargs), void *xargs) {
+    exitif(obj == NULL);
+    exitif(obj->type != vtobject);
     for (size_t _i = 0; _i < (obj->ovalue).capacity; _i++) {
         char *k = (obj->ovalue).base[_i].key.base;
         size_t klen = (obj->ovalue).base[_i].key.length;
         struct var *v = (obj->ovalue).base[_i].value;
         if (k) {
-            cb(k, klen, v);
+            cb(k, klen, v, xargs);
         }
     }
 }

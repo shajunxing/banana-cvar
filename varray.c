@@ -19,7 +19,7 @@ struct var *anew(size_t num, ...) {
     va_start(args, num);
     for (size_t i = 0; i < num; i++) {
         struct var *p = va_arg(args, struct var *);
-        exitif(p == NULL, EINVAL);
+        exitif(p == NULL);
         vbpush(&(pv->avalue), p);
     }
     va_end(args);
@@ -27,46 +27,46 @@ struct var *anew(size_t num, ...) {
 }
 
 void aclear(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
     vbclear(&(pv->avalue));
 }
 
 size_t alength(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
     return (pv->avalue).length;
 }
 
 void apush(struct var *pv, struct var *pval) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
-    exitif(pval == NULL, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
+    exitif(pval == NULL);
     vbpush(&(pv->avalue), pval);
 }
 
 struct var *apop(struct var *pv) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
     return vbpop(&(pv->avalue));
 }
 
 void aput(struct var *pv, size_t idx, struct var *pval) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
-    exitif(pval == NULL, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
+    exitif(pval == NULL);
     vbput(&(pv->avalue), pval, idx);
 }
 
 struct var *aget(struct var *pv, size_t idx) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
     return vbget(&(pv->avalue), idx);
 }
 
 static int acomp_default(const struct var *pv1, const struct var *pv2) {
-    exitif(pv1 == NULL, EINVAL);
-    exitif(pv2 == NULL, EINVAL);
+    exitif(pv1 == NULL);
+    exitif(pv2 == NULL);
     if (pv1 == pv2) {
         return 0;
     }
@@ -101,19 +101,19 @@ static int acomp_relay(void *ctx, const void *e1, const void *e2) {
 }
 
 void asort(struct var *pv, int (*comp)(const struct var *, const struct var *)) {
-    exitif(pv == NULL, EINVAL);
-    exitif(pv->type != vtarray, EINVAL);
+    exitif(pv == NULL);
+    exitif(pv->type != vtarray);
     if (NULL == comp) {
         comp = acomp_default;
     }
     qsort_s(pv->avalue.base, pv->avalue.length, sizeof(struct var *), acomp_relay, comp);
 }
 
-void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v)) {
-    exitif(arr == NULL, EINVAL);
-    exitif(arr->type != vtarray, EINVAL);
+void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v, void *xargs), void *xargs) {
+    exitif(arr == NULL);
+    exitif(arr->type != vtarray);
     for (size_t i = 0; i < (arr->avalue).length; i++) {
         struct var *v = (arr->avalue).base[i];
-        cb(i, v);
+        cb(i, v, xargs);
     }
 }

@@ -14,6 +14,7 @@ You should have received a copy of the GNU General Public License along with thi
 // 比如vasprintf就需要声明_GNU_SOURCE
 #define _GNU_SOURCE
 #include <ctype.h>
+#include <locale.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -46,7 +47,10 @@ You should have received a copy of the GNU General Public License along with thi
 #define str(a) #a
 #define xstr(a) str(a)
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
-#define lambda(ret, args, body) ({ ret f args body &f; })
+#define concat(a, b) a##b
+#define xconcat(a, b) concat(a, b)
+// 注意lambda函数名不要取诸如f之类的，会重名
+#define lambda(ret, args, body) ({ ret xconcat(__lambda_, __LINE__) args body &xconcat(__lambda_, __LINE__); })
 
 #ifndef max
     #define max(a, b) \
@@ -63,16 +67,16 @@ You should have received a copy of the GNU General Public License along with thi
 
 // NDEBUG是习惯，比如assert宏
 #ifndef NDEBUG
-    #define logdebug(format, ...) \
-        fprintf(stdout, "DEBUG %s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+    #define logdebug(fmt, ...) \
+        fprintf(stdout, "\e[38;2;0;102;255mDEBUG %s,%d %s:\e[0m " fmt "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #else
-    #define logdebug(format, ...) \
-        do {                      \
+    #define logdebug(fmt, ...) \
+        do {                   \
         } while (0)
 #endif
 
-#define logerror(format, ...) \
-    fprintf(stderr, "ERROR %s,%d %s: " format "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#define logerror(fmt, ...) \
+    fprintf(stderr, "\e[38;2;255;51;51mERROR %s,%d %s:\e[0m " fmt "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 
 #ifndef NDEBUG
 shared void stacktrace();
@@ -82,11 +86,13 @@ shared void stacktrace();
         } while (0)
 #endif
 
-#define logexit(format, ...)             \
-    do {                                 \
-        logerror(format, ##__VA_ARGS__); \
-        stacktrace();                    \
-        exit(EXIT_FAILURE);              \
+shared void hexdump(void *start, size_t length);
+
+#define logexit(fmt, ...)             \
+    do {                              \
+        logerror(fmt, ##__VA_ARGS__); \
+        stacktrace();                 \
+        exit(EXIT_FAILURE);           \
     } while (0)
 
 // 如果cond为真则退出程序，可选参数为errno，如无则保留当前值不变
@@ -116,7 +122,7 @@ struct buffer {
 };
 shared void bfinit(struct buffer *pbuffer, size_t size);
 shared void *bfoffset(struct buffer *pbuffer, size_t index);
-shared void bfclear(struct buffer *pbuffer);
+shared void bffree(struct buffer *pbuffer);
 shared void bfstrip(struct buffer *pbuffer);
 shared void bfpush(struct buffer *pbuffer, void *pvalues, size_t nvalues);
 #define bfpushall(pb, pv) bfpush(pb, pv, countof(pv))
@@ -134,6 +140,7 @@ struct stringbuffer {
 };
 shared void sbinit(struct stringbuffer *psb);
 shared void sbclear(struct stringbuffer *psb);
+shared void sbfree(struct stringbuffer *psb);
 shared void sbappend_s(struct stringbuffer *psb, const char *s, size_t slen);
 shared void sbappend(struct stringbuffer *psb, const char *sz);
 shared void sbdump(struct stringbuffer *psb);
@@ -155,7 +162,7 @@ struct varbuffer {
     size_t length;
 };
 shared void vbinit(struct varbuffer *pb);
-shared void vbclear(struct varbuffer *pb);
+shared void vbfree(struct varbuffer *pb);
 shared void vbpush(struct varbuffer *pb, struct var *v);
 shared struct var *vbpop(struct varbuffer *pb);
 shared void vbput(struct varbuffer *pb, struct var *v, size_t i);
@@ -203,8 +210,12 @@ struct ref {
 
 shared void vdump(const char *prefix, const struct var *pv, const char *suffix);
 shared void rdump(const char *prefix, const struct ref *pr, const char *suffix);
-shared void wdump(const char *prefix, const char *suffix);
-#define dump() wdump(__FILE__ "," xstr(__LINE__) ":", "")
+shared void wdump();
+#define dump()        \
+    do {              \
+        logdebug(""); \
+        wdump();      \
+    } while (0)
 
 shared void gc();
 
@@ -248,35 +259,52 @@ shared const char *svalue(struct var *pv);
 shared size_t slength(struct var *pv);
 shared struct var *sconcat(size_t num, ...);
 shared struct var *sformat(const char *fmt, ...);
-shared struct var *smatch_s(const char *p, const char *src, size_t srcl);
-shared struct var *smatch(const char *p, const char *srcz);
+shared struct var *smatch_s(const char *pat, const char *str, size_t slen);
+shared struct var *smatch(const char *pat, const char *sz);
 
-shared struct var *anew(size_t num, ...);
+shared struct var *anew(size_t len, ...);
 #define adeclare(a) vdeclare(a, anew(0))
 #define aassign(a) vassign(a, anew(0))
-shared void aclear(struct var *pv);
-shared size_t alength(struct var *pv);
-shared void apush(struct var *pv, struct var *pval);
-shared struct var *apop(struct var *pv);
-shared void aput(struct var *pv, size_t idx, struct var *pval);
-shared struct var *aget(struct var *pv, size_t idx);
-shared void asort(struct var *pv, int (*comp)(const struct var *, const struct var *));
-shared void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v, void *xargs), void *xargs);
+shared void aclear(struct var *arr);
+shared void afree(struct var *arr);
+shared size_t alength(struct var *arr);
+shared void apush(struct var *arr, struct var *val);
+shared struct var *apop(struct var *arr);
+shared void aput(struct var *arr, size_t idx, struct var *val);
+shared struct var *aget(struct var *arr, size_t idx);
+shared void asort(struct var *arr, int (*comp)(const struct var *val1, const struct var *val2));
+shared void aforeach(struct var *arr, void (*cb)(size_t idx, struct var *val));
 
 shared struct var *onew();
 #define odeclare(a) vdeclare(a, onew())
 #define oassign(a) vassign(a, onew())
-shared void oclear(struct var *pv);
-shared size_t olength(struct var *pv);
-shared void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval);
-shared void oput(struct var *pv, const char *key, struct var *pval);
-shared struct var *oget_s(struct var *pv, const char *key, size_t klen);
-shared struct var *oget(struct var *pv, const char *key);
-shared void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v, void *xargs), void *xargs);
+shared void oclear(struct var *obj);
+shared void ofree(struct var *obj);
+shared size_t olength(struct var *obj);
+shared void oput_s(struct var *obj, const char *key, size_t klen, struct var *val);
+shared void oput(struct var *obj, const char *key, struct var *val);
+shared struct var **oget_p(struct var *obj, const char *key, size_t klen);
+shared struct var *oget_s(struct var *obj, const char *key, size_t klen);
+shared struct var *oget(struct var *obj, const char *key);
+shared void odelete_p(struct var *obj, struct var **pval);
+shared void odelete_s(struct var *obj, const char *key, size_t klen);
+shared void odelete(struct var *obj, const char *key);
+shared void oforeach_p(struct var *obj, void (*cb)(const char *key, size_t klen, struct var **pval));
+shared void oforeach(struct var *obj, void (*cb)(const char *key, size_t klen, struct var *val));
 
-shared struct var *vtojson(struct var *pv);
-#define tojson(pv) svalue(vtojson(pv))
+shared struct var *vtojson(struct var *variable);
+shared const char *tojson(struct var *variable);
 shared struct var *vfromjson_s(const char *jsonstr, size_t jsonslen);
 shared struct var *vfromjson(const char *jsonstr);
+
+//
+// unicode.c
+//
+
+shared struct var *freadall(FILE *stream);
+shared void freadlines(FILE *stream, void (*cb)(const char *str, size_t slen));
+shared void freadunichars(FILE *stream, void (*cb)(uint32_t unichar));
+shared size_t fwriteunichars(FILE *stream, const uint32_t *unichars, size_t nchars);
+shared size_t fwriteunichar(FILE *stream, uint32_t unichar);
 
 #endif

@@ -30,7 +30,7 @@ static int btcb_full(void *data, uintptr_t pc, const char *filename, int lineno,
 //     fprintf(stderr, "%s %p %lld\n", symname, (void *)symval, symsize);
 // }
 static int btcb_simple(void *data, uintptr_t pc) {
-    fprintf(stderr, "\t%p ", (void *)pc);
+    fprintf(stderr, "    %p ", (void *)pc);
     backtrace_pcinfo(bt_state, pc, btcb_full, btcb_error, NULL);
     // backtrace_syminfo(bt_state, pc, btcb_syminfo, btcb_error, NULL);
     return 0;
@@ -43,6 +43,38 @@ void stacktrace() {
     fprintf(stderr, "\n");
 }
 #endif
+
+#define SEGS_PER_LINE 2
+#define BYTES_PER_SEG 8
+
+static inline uint8_t printable(uint8_t ch) {
+    return ch >= 0x20 && ch <= 0x7e ? ch : ' ';
+}
+
+void hexdump(void *start, size_t length) {
+    size_t bytes_per_line = SEGS_PER_LINE * BYTES_PER_SEG;
+    uint8_t *base = (uint8_t *)start;
+    for (size_t loffs = 0; loffs <= length; loffs += bytes_per_line) { // <=确保length=0也打印一行
+        printf("    %06llx:  ", loffs);
+        for (int what = 0; what < 2; what++) { // 0 hex, 1 ascii
+            for (size_t seg = 0; seg < SEGS_PER_LINE; seg++) {
+                for (size_t boffs = 0; boffs < BYTES_PER_SEG; boffs++) {
+                    size_t offs = loffs + seg * BYTES_PER_SEG + boffs;
+                    if (offs < length) {
+                        const char *fmt = what == 0 ? "%02x " : "%c";
+                        uint8_t ch = what == 0 ? base[offs] : printable(base[offs]);
+                        printf(fmt, ch);
+                    } else {
+                        printf(what == 0 ? "   " : " ");
+                    }
+                }
+                printf(what == 0 ? " " : "");
+            }
+            printf(" ");
+        }
+        printf("\n");
+    }
+}
 
 // 安全释放内存，并置NULL
 void free_s(void **pp) {
@@ -85,6 +117,7 @@ void alloc_s(void **pp, size_t oldnum, size_t newnum, size_t sz) {
 }
 
 void sbinit(struct stringbuffer *psb) {
+    exitif(psb == NULL);
     memset(psb, 0, sizeof *psb);
     size_t newcap = BUFFER_INITIAL_CAPACITY;
     alloc_s((void **)&(psb->base), psb->capacity, newcap, 1);
@@ -92,6 +125,12 @@ void sbinit(struct stringbuffer *psb) {
 }
 
 void sbclear(struct stringbuffer *psb) {
+    exitif(psb == NULL);
+    memset(psb->base, 0, psb->length);
+    psb->length = 0;
+}
+
+void sbfree(struct stringbuffer *psb) {
     exitif(psb == NULL);
     free_s((void **)&(psb->base));
     psb->capacity = 0;
@@ -137,7 +176,7 @@ void vbinit(struct varbuffer *pb) {
     pb->capacity = newcap;
 }
 
-void vbclear(struct varbuffer *pb) {
+void vbfree(struct varbuffer *pb) {
     exitif(pb == NULL);
     free_s((void **)&(pb->base));
     pb->capacity = 0;
@@ -275,10 +314,7 @@ void rdump(const char *prefix, const struct ref *pr, const char *suffix) {
     }
 }
 
-void wdump(const char *prefix, const char *suffix) {
-    if (prefix) {
-        printf("%s\n", prefix);
-    }
+void wdump() {
     vdump("     varnull: ", &varnull, "\n");
     vdump("     vartrue: ", &vartrue, "\n");
     vdump("    varfalse: ", &varfalse, "\n");
@@ -295,9 +331,6 @@ void wdump(const char *prefix, const char *suffix) {
         } else {
             rdump("              ", pr, "\n");
         }
-    }
-    if (suffix) {
-        printf("%s", suffix);
     }
 }
 
@@ -397,13 +430,13 @@ void gc() {
         } else {
             switch (pv->type) {
             case vtstring:
-                sbclear(&(pv->svalue));
+                sbfree(&(pv->svalue));
                 break;
             case vtarray:
-                aclear(pv);
+                afree(pv);
                 break;
             case vtobject:
-                oclear(pv);
+                ofree(pv);
                 break;
             default:
                 break;

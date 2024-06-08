@@ -168,7 +168,7 @@ void test_file(const char *filename) {
     printf("    test_cjson_dec_enc : %lf\n", t1 = measure(test_cjson_dec_enc, repeat));
     printf("    test_cvar_dec_enc  : %lf\n", t2 = measure(test_cvar_dec_enc, repeat));
     printf("                       : %.0lf%%\n", 100 * t2 / t1);
-    sbclear(&jsonbuf);
+    sbfree(&jsonbuf);
     return;
 }
 

@@ -27,6 +27,7 @@ Use the xnew() series of functions to create dynamic variables, x is the prefix,
 |a|array|
 |o|object|
 |w|world, whole, which means the whole and the whole |
+|f|file|
 
 Dynamic variables are corresponding to struct var, which are operated by pointers, and the types are equivalent to the Json standard, which are null, boolean, number, array, and object, and null, true, and false are global constants in order to save memory. Dynamic variables created by the xnew() series of functions are hosted on the globally linked list pvarroot. The functions and macros listed in the following table are all functions with arguments and return value types, and vice versa. The so-called dynamic syntax is to give an intuitive feeling with a JavaScript-like syntax, and in the future, it may be extended in this way and a converter can be written to convert it to C code, so that it can perfectly replace embedded dynamic languages such as Lua.
 
@@ -105,7 +106,7 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |void aput(struct var *pv, size_t idx, struct var *pval)|v[idx] = val|array specifies that the subscript is written to replace the original value, and the program exits | if the subscript is out of bounds
 |struct var *aget(struct var *pv, size_t idx)|v[idx]|takes the value of the array to specify the subscript, and the program exits if the subscript is out of bounds|
 |void asort(struct var *pv, int (*comp)(const struct var *, const struct var *))|v.sort()|array sorting, comp is a user-specified sorting function, the return value convention is the same as qsort, if it is NULL, then call the default sorting function, the rules are: 1. Different types, according to null, boolean, number, 2. The string is called memcmp with the minimum length +1 before true, that is, 0 at the end participates in the comparison, and the array and object only compare the number of elements |
-|void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v, void *xargs), void *xargs)|for (i, v in arr) {...}|Sequentially iterate through all indexes and values of the array|
+|void aforeach(struct var *arr, void (*cb)(size_t i, struct var *v))|for (i, v in arr) {...}|Sequentially iterate through all indexes and values of the array|
 
 ## Object
 
@@ -115,14 +116,15 @@ Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |size_t olength(struct var *pv)|v.length()|returns the number of elements of the object|
 |void oput_s(struct var *pv, const char *key, size_t klen, struct var *pval)<br>void oput(struct var *pv, const char *key, struct var *pval)|v[key] = val|write key-value pair|
 |struct var *oget_s(struct var *pv, const char *key, size_t klen)<br>struct var *oget(struct var *pv, const char *key)|v[key]|read the value corresponding to the key, note that NULL may be returned, and the program must make a judgment|
-|void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v, void *xargs), void *xargs)|for (k, klen, v in obj) {...}|Iterate through all keys and values of the object|
+|void odelete_s(struct var *pv, const char *key, size_t klen)<br>void odelete(struct var *pv, const char *key)|delete v[key]|delete the value corresponding to the key|
+|void oforeach(struct var *obj, void (*cb)(const char *k, size_t klen, struct var *v))|for (k, klen, v in obj) {...}|Iterate through all keys and values of the object|
 
 ## Json
 
 Functions/Macros|Dynamic Syntax|Descriptions/Examples|
 |-|-|-|
 |struct var *vtojson(struct var *pv)||jsonize arbitrary variables, and the result is returned as a string variable, note: nesting dolls are prohibited, and nested loops are ignored|
-|tojson(pv)|print([null, [3.140000, "hi"], false])|Returns an array of C characters jsonized by the variable, which is used for functions such as printf<br>printf(tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))))|
+|const char *tojson(struct var *pv)|print([null, [3.140000, "hi"], false])|Returns an array of C characters jsonized by the variable, which is used for functions such as printf<br>printf(tojson(anew(3, znew(), anew(2, nnew(3.14), snew("hi")), bnew(false))))|
 |struct var *vfromjson_s(const char *jsonstr, size_t jsonslen)<br>struct var *vfromjson(const char *jsonstr)||Parsing JSON strings, this function will skip all non-essential characters, so it has a strong error correction ability, in addition, UTF-16 escape is not supported, because it has long been abandoned, JSON strings themselves are forced UTF-8 encoding|
 
 ## Code sample

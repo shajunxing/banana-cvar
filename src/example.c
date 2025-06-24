@@ -16,7 +16,7 @@ static void _pause() {
     getchar();
 }
 
-void _create_values() {
+static void _create_values() {
     var a = null();
     var b = boolean(true);
     var c = boolean(false);
@@ -26,7 +26,7 @@ void _create_values() {
     print(a, b, c, d, e, f);
 }
 
-void _loop_without_gc() {
+static void _loop_without_gc() {
     printf("Open task manager to see memory consumption grows\n");
     _pause();
     for (;;) {
@@ -34,7 +34,7 @@ void _loop_without_gc() {
     }
 }
 
-void _loop_with_gc() {
+static void _loop_with_gc() {
     printf("Open task manager to see memory consumption keeps unchanged\n");
     _pause();
     for (;;) {
@@ -43,7 +43,7 @@ void _loop_with_gc() {
     }
 }
 
-void _exception_handling() {
+static void _exception_handling() {
     try(try(throw(scripture("Boom!")), ex, print(ex); throw(scripture("Bars!"));), ex, print(ex));
     printf("%zu\n", default_error_stack.length);
     try(

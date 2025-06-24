@@ -11,7 +11,12 @@ You should have received a copy of the GNU General Public License along with thi
 #include <stdlib.h>
 #include "var.h"
 
-void foo() {
+static void _pause() {
+    printf("Press return to continue ...");
+    getchar();
+}
+
+void _create_values() {
     var a = null();
     var b = boolean(true);
     var c = boolean(false);
@@ -21,10 +26,86 @@ void foo() {
     print(a, b, c, d, e, f);
 }
 
-int main() {
-    for(;;) {
-        foo();
+void _loop_without_gc() {
+    printf("Open task manager to see memory consumption grows\n");
+    _pause();
+    for (;;) {
+        _create_values();
+    }
+}
+
+void _loop_with_gc() {
+    printf("Open task manager to see memory consumption keeps unchanged\n");
+    _pause();
+    for (;;) {
+        _create_values();
         gc();
+    }
+}
+
+void _exception_handling() {
+    try(try(throw(scripture("Boom!")), ex, print(ex); throw(scripture("Bars!"));), ex, print(ex));
+    printf("%zu\n", default_error_stack.length);
+    try(
+        try({
+        var a = number(3.141592654);
+        var b = number(2.718281829);
+        var c = string("Hello,");
+        var d = string("World!");
+        print(a, b, add(a, b), c, d, add(c, d));
+        print(add(a, c)); }, ex, throw(ex)), ex, print(ex));
+    gc();
+}
+
+#define example_function_list \
+    X(_loop_without_gc)       \
+    X(_loop_with_gc)          \
+    X(_exception_handling)
+
+#define X(name) #name,
+static const char *example_function_names[] = {example_function_list};
+#undef X
+
+#define X(name) name,
+static const void (*example_functions[])() = {example_function_list};
+#undef X
+
+static void _read_line(char **base, size_t *length, size_t *capacity) {
+    enforce(*base == NULL);
+    enforce(*length == 0);
+    enforce(*capacity == 0);
+    for (;;) {
+        int ch = getchar();
+        if (ch == EOF || ch == '\n') {
+            break;
+        }
+        string_buffer_append_ch(*base, *length, *capacity, ch);
+    }
+}
+
+int main(int argc, char *argv[]) {
+    int id;
+    for (id = 0; id < countof(example_function_names); id++) {
+        printf("%4d. %-34s", id, example_function_names[id]);
+        if (id % 2 == 1) {
+            printf("\n");
+        }
+    }
+    if (id % 2 == 1) {
+        printf("\n");
+    }
+    for (;;) {
+        printf("Enter your choice (0-%zu): ", countof(example_functions) - 1);
+        char *line = NULL;
+        size_t line_length = 0;
+        size_t line_capacity = 0;
+        _read_line(&line, &line_length, &line_capacity);
+        int selected_id = atoi(line);
+        buffer_free(line, line_length, line_capacity);
+        if (selected_id >= 0 && selected_id < countof(example_functions)) {
+            example_functions[selected_id]();
+            break;
+        }
     }
     return EXIT_SUCCESS;
 }

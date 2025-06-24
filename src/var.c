@@ -24,17 +24,17 @@ void _print(size_t nargs, ...) {
     va_end(args);
 }
 
-struct managed_list default_managed_list = {0};
-struct reference_list default_reference_list = {0};
+struct heap default_heap = {0};
+struct record default_record = {0};
 
-struct js_value _string(struct managed_list *ml, struct reference_list *rl, const char *s, size_t slen) {
-    struct js_value ret = js_string(&(ml->base), &(ml->length), &(ml->capacity), s, slen);
-    buffer_push(rl->base, rl->length, rl->capacity, ((struct reference){.value = ret, .address = &ret}));
+struct js_value _string(struct heap *hl, struct record *rl, const char *s, size_t slen) {
+    struct js_value ret = js_string(&(hl->base), &(hl->length), &(hl->capacity), s, slen);
+    buffer_push(rl->base, rl->length, rl->capacity, ((struct variable){.value = ret, .address = &ret}));
     return ret;
 }
 
-void _gc(struct managed_list *ml, struct reference_list *rl) {
-    struct reference_list new_rl = {0};
+void _gc(struct heap *hl, struct record *rl) {
+    struct record new_rl = {0};
     buffer_for_each(rl->base, rl->length, rl->capacity, i, r, {
         if (memcmp(&(r->value), r->address, sizeof(struct js_value)) == 0) { // stack not changed, means in use
             js_mark(&(r->value));
@@ -43,5 +43,19 @@ void _gc(struct managed_list *ml, struct reference_list *rl) {
     });
     buffer_free(rl->base, rl->length, rl->capacity);
     *rl = new_rl;
-    js_sweep(&(ml->base), &(ml->length), &(ml->capacity));
+    js_sweep(&(hl->base), &(hl->length), &(hl->capacity));
+}
+
+struct error_stack default_error_stack = {0};
+
+struct js_value _add(struct heap *hl, struct record *rl, struct js_value lhs, struct js_value rhs) {
+    if (lhs.type == vt_number && rhs.type == vt_number) {
+        return js_number(lhs.number + rhs.number);
+    } else if (js_is_string(&lhs) && js_is_string(&rhs)) {
+        struct js_value ret = _string(hl, rl, js_string_base(&lhs), js_string_length(&lhs));
+        string_buffer_append(ret.managed->string.base, ret.managed->string.length, ret.managed->string.capacity, js_string_base(&rhs), js_string_length(&rhs));
+        return ret;
+    } else {
+        throw(js_scripture_sz("Add operand must be number or string"));
+    }
 }

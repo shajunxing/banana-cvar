@@ -11,6 +11,7 @@ You should have received a copy of the GNU General Public License along with thi
 #ifndef VAR_H
 #define VAR_H
 
+#include <setjmp.h>
 #include "../../banana-script/src/js-data.h"
 
 typedef struct js_value var;
@@ -34,30 +35,72 @@ typedef struct js_value var;
 extern void _print(size_t, ...);
 #define print(...) _print(numargs(__VA_ARGS__), ##__VA_ARGS__)
 
-struct managed_list {
+struct heap {
     struct js_managed_value **base;
     size_t length;
     size_t capacity;
 };
 
-struct reference {
+struct variable {
     struct js_value value;
     struct js_value *address;
 };
 
-struct reference_list {
-    struct reference *base;
+struct record {
+    struct variable *base;
     size_t length;
     size_t capacity;
 };
 
-extern struct managed_list default_managed_list;
-extern struct reference_list default_reference_list;
+extern struct heap default_heap;
+extern struct record default_record;
 
-extern struct js_value _string(struct managed_list *, struct reference_list *, const char *, size_t);
-#define string(__arg_s) _string(&default_managed_list, &default_reference_list, __arg_s, strlen(__arg_s))
+extern struct js_value _string(struct heap *, struct record *, const char *, size_t);
+#define string(__arg_s) _string(&default_heap, &default_record, __arg_s, strlen(__arg_s))
 
-extern void _gc(struct managed_list *, struct reference_list *);
-#define gc() _gc(&default_managed_list, &default_reference_list)
+extern void _gc(struct heap *, struct record *);
+#define gc() _gc(&default_heap, &default_record)
+
+struct error_frame {
+    jmp_buf buffer;
+    struct js_value message;
+};
+
+struct error_stack {
+    struct error_frame *base;
+    size_t length;
+    size_t capacity;
+};
+
+extern struct error_stack default_error_stack;
+
+#define try(__arg_try_statements, __arg_message_variable, __arg_catch_statements) \
+    do {                                                                          \
+        buffer_push(default_error_stack.base, default_error_stack.length,         \
+                    default_error_stack.capacity, ((struct error_frame){0}));     \
+        struct error_frame *__stack_top =                                         \
+            default_error_stack.base + default_error_stack.length - 1;            \
+        if (setjmp(__stack_top->buffer) == 0) {                                   \
+            __arg_try_statements;                                                 \
+            default_error_stack.length--;                                         \
+        } else {                                                                  \
+            struct js_value __arg_message_variable = __stack_top->message;        \
+            default_error_stack.length--;                                         \
+            __arg_catch_statements;                                               \
+        }                                                                         \
+    } while (0)
+#define throw(__arg_message)                                           \
+    do {                                                               \
+        if (default_error_stack.length == 0) {                         \
+            fatal("Statement 'throw' must inside 'try' block");        \
+        }                                                              \
+        struct error_frame *__stack_top =                              \
+            default_error_stack.base + default_error_stack.length - 1; \
+        __stack_top->message = __arg_message;                          \
+        longjmp(__stack_top->buffer, 1);                               \
+    } while (0)
+
+extern struct js_value _add(struct heap *, struct record *, struct js_value, struct js_value);
+#define add(__arg_lhs, __arg_rhs) _add(&default_heap, &default_record, __arg_lhs, __arg_rhs)
 
 #endif

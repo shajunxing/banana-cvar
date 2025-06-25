@@ -17,12 +17,12 @@ In `example.c`, if you comment out line `gc();` and check task manager, you’ll
 #include "var.h"
 
 void foo() {
-    var a = null();
-    var b = boolean(true);
-    var c = boolean(false);
-    var d = number(3.14);
-    var e = scripture("This is a constant string");
-    var f = string("This is a dynamic string");
+    var(a, null());
+    var(b, boolean(true));
+    var(c, boolean(false));
+    var(d, number(3.14));
+    var(e, scripture("This is a constant string"));
+    var(f, string("This is a dynamic string"));
     print(a, b, c, d, e, f);
 }
 

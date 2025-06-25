@@ -17,12 +17,14 @@ static void _pause() {
 }
 
 static void _create_values() {
-    var a = null();
-    var b = boolean(true);
-    var c = boolean(false);
-    var d = number(3.14);
-    var e = scripture("This is a constant string");
-    var f = string("This is a dynamic string");
+    var(a, null());
+    var(b, boolean(true));
+    var(c, boolean(false));
+    var(d, number(3.14));
+    var(e, scripture("This is a constant string"));
+    var(f, string("This is a dynamic string"));
+    print(a, b, c, d, e, f);
+    gc();
     print(a, b, c, d, e, f);
 }
 
@@ -30,7 +32,7 @@ static void _loop_without_gc() {
     printf("Open task manager to see memory consumption grows\n");
     _pause();
     for (;;) {
-        _create_values();
+        var(s, string("This is a dynamic string"));
     }
 }
 
@@ -38,26 +40,27 @@ static void _loop_with_gc() {
     printf("Open task manager to see memory consumption keeps unchanged\n");
     _pause();
     for (;;) {
-        _create_values();
+        var(s, string("This is a dynamic string"));
         gc();
     }
 }
 
 static void _exception_handling() {
     try(try(throw(scripture("Boom!")), ex, print(ex); throw(scripture("Bars!"));), ex, print(ex));
-    printf("%zu\n", default_error_stack.length);
+    printf("%zu\n", error_stack.length);
     try(
         try({
-        var a = number(3.141592654);
-        var b = number(2.718281829);
-        var c = string("Hello,");
-        var d = string("World!");
-        print(a, b, add(a, b), c, d, add(c, d));
-        print(add(a, c)); }, ex, throw(ex)), ex, print(ex));
+            var(a, number(3.141592654));
+            var(b, number(2.718281829));
+            var(c, string("Hello,"));
+            var(d, string("World!"));
+            print(a, b, add(a, b), c, d, add(c, d));
+            print(add(a, c)); }, ex, throw(ex)), ex, print(ex));
     gc();
 }
 
 #define example_function_list \
+    X(_create_values)         \
     X(_loop_without_gc)       \
     X(_loop_with_gc)          \
     X(_exception_handling)

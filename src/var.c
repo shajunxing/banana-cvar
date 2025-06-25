@@ -24,38 +24,38 @@ void _print(size_t nargs, ...) {
     va_end(args);
 }
 
-struct heap default_heap = {0};
-struct record default_record = {0};
+static struct js_heap _heap = {0};
+struct record record = {0};
 
-struct js_value _string(struct heap *hl, struct record *rl, const char *s, size_t slen) {
-    struct js_value ret = js_string(&(hl->base), &(hl->length), &(hl->capacity), s, slen);
-    buffer_push(rl->base, rl->length, rl->capacity, ((struct variable){.value = ret, .address = &ret}));
-    return ret;
+struct js_value string(const char *s) {
+    return js_string_sz(&_heap, s);
 }
 
-void _gc(struct heap *hl, struct record *rl) {
-    struct record new_rl = {0};
-    buffer_for_each(rl->base, rl->length, rl->capacity, i, r, {
+void gc() {
+    struct record new_record = {0};
+    buffer_for_each(record.base, record.length, record.capacity, i, r, {
         if (memcmp(&(r->value), r->address, sizeof(struct js_value)) == 0) { // stack not changed, means in use
             js_mark(&(r->value));
-            buffer_push(new_rl.base, new_rl.length, new_rl.capacity, *r);
+            buffer_push(new_record.base, new_record.length, new_record.capacity, *r);
         }
     });
-    buffer_free(rl->base, rl->length, rl->capacity);
-    *rl = new_rl;
-    js_sweep(&(hl->base), &(hl->length), &(hl->capacity));
+    buffer_free(record.base, record.length, record.capacity);
+    record = new_record;
+    js_sweep(&_heap);
 }
 
-struct error_stack default_error_stack = {0};
+struct error_stack error_stack = {0};
 
-struct js_value _add(struct heap *hl, struct record *rl, struct js_value lhs, struct js_value rhs) {
-    if (lhs.type == vt_number && rhs.type == vt_number) {
-        return js_number(lhs.number + rhs.number);
-    } else if (js_is_string(&lhs) && js_is_string(&rhs)) {
-        struct js_value ret = _string(hl, rl, js_string_base(&lhs), js_string_length(&lhs));
-        string_buffer_append(ret.managed->string.base, ret.managed->string.length, ret.managed->string.capacity, js_string_base(&rhs), js_string_length(&rhs));
-        return ret;
-    } else {
-        throw(js_scripture_sz("Add operand must be number or string"));
-    }
+#define _proxy_js_result(__arg_expression)              \
+    do {                                                \
+        struct js_result __result = (__arg_expression); \
+        if (__result.success) {                         \
+            return __result.value;                      \
+        } else {                                        \
+            throw(__result.value);                      \
+        }                                               \
+    } while (0)
+
+struct js_value add(struct js_value lhs, struct js_value rhs) {
+    _proxy_js_result(js_add(&_heap, &lhs, &rhs));
 }

@@ -8,7 +8,7 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "../banana-make/make.h"
+#include "../banana-nomake/make.h"
 
 #define bin_dir "bin" pathsep
 #define build_dir "build" pathsep
@@ -37,19 +37,19 @@ You should have received a copy of the GNU General Public License along with thi
 void build() {
     mkdir(bin_dir);
     mkdir(build_dir);
+    // DON'T use async because latter depends former's obj
     if (mtime(js_common_obj) < mtime(js_common_h, js_common_c)) {
-        async(compile_js_common);
+        run(compile_js_common);
     }
     if (mtime(js_data_obj) < mtime(js_data_h, js_data_c, js_common_obj)) {
-        async(compile_js_data);
+        run(compile_js_data);
     }
     if (mtime(var_obj) < mtime(var_h, var_c, js_data_obj js_common_obj)) {
-        async(compile_var);
+        run(compile_var);
     }
     if (mtime(example_obj) < mtime(example_c, var_obj, js_data_obj js_common_obj)) {
-        async(compile_example);
+        run(compile_example);
     }
-    await();
     if (mtime(example_exe) < mtime(example_obj, var_obj, js_data_obj, js_common_obj)) {
         run("link /nologo /incremental:no /out:" example_exe " " example_obj " " var_obj " " js_data_obj " " js_common_obj);
     }

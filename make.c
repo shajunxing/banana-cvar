@@ -16,42 +16,50 @@ You should have received a copy of the GNU General Public License along with thi
 #define banana_script_src_dir ".." pathsep "banana-script" pathsep "src" pathsep
 #define js_common_h banana_script_src_dir "js-common.h"
 #define js_common_c banana_script_src_dir "js-common.c"
-#define js_common_obj build_dir "js_common" objext
+#define js_common_o build_dir "js_common" objext
 #define js_data_h banana_script_src_dir "js-data.h"
 #define js_data_c banana_script_src_dir "js-data.c"
-#define js_data_obj build_dir "js_data" objext
+#define js_data_o build_dir "js_data" objext
 #define var_h src_dir "var.h"
 #define var_c src_dir "var.c"
-#define var_obj build_dir "var" objext
+#define var_o build_dir "var" objext
 #define example_c src_dir "example.c"
-#define example_obj build_dir "example" objext
+#define example_o build_dir "example" objext
 #define example_exe bin_dir "example" exeext
-#ifdef _MSC_VER
-    #define cc "cl /nologo /c /W3 /MD /Zp /utf-8 /std:clatest /Fo"
-    #define compile_js_common cc js_common_obj " " js_common_c
-    #define compile_js_data cc js_data_obj " " js_data_c
-    #define compile_var cc var_obj " " var_c
-    #define compile_example cc example_obj " " example_c
+#if compiler == msvc
+    #define cc "cl /nologo /c /W3 /MD /Zp /utf-8 /std:clatest /O2 /Fo"
+    #define ld "link /nologo /incremental:no /nodefaultlib /out:"
+    #define extra_libs " msvcrt.lib libvcruntime.lib ucrt.lib kernel32.lib user32.lib"
+#else
+    #define cc "gcc -c -Wall -O3 -o "
+    #define ld "gcc -fvisibility=hidden -fvisibility-inlines-hidden -static -static-libgcc -s -Wl,--exclude-all-symbols -o "
+    #define extra_libs ""
 #endif
+#define compile_js_common cc js_common_o " " js_common_c
+#define compile_js_data cc js_data_o " " js_data_c
+#define compile_var cc var_o " " var_c
+#define compile_example cc example_o " " example_c
+#define link_example ld example_exe " " example_o " " var_o " " js_data_o " " js_common_o extra_libs
 
 void build() {
     mkdir(bin_dir);
     mkdir(build_dir);
-    // DON'T use async because latter depends former's obj
-    if (mtime(js_common_obj) < mtime(js_common_h, js_common_c)) {
-        run(compile_js_common);
+    // DON'T compare obj because it is generated asynchronously
+    if (mtime(js_common_o) < mtime(js_common_h, js_common_c)) {
+        async(compile_js_common);
     }
-    if (mtime(js_data_obj) < mtime(js_data_h, js_data_c, js_common_obj)) {
-        run(compile_js_data);
+    if (mtime(js_data_o) < mtime(js_data_h, js_data_c, js_common_h)) {
+        async(compile_js_data);
     }
-    if (mtime(var_obj) < mtime(var_h, var_c, js_data_obj js_common_obj)) {
-        run(compile_var);
+    if (mtime(var_o) < mtime(var_h, var_c, js_data_h, js_common_h)) {
+        async(compile_var);
     }
-    if (mtime(example_obj) < mtime(example_c, var_obj, js_data_obj js_common_obj)) {
-        run(compile_example);
+    if (mtime(example_o) < mtime(example_c, var_h, js_data_h, js_common_h)) {
+        async(compile_example);
     }
-    if (mtime(example_exe) < mtime(example_obj, var_obj, js_data_obj, js_common_obj)) {
-        run("link /nologo /incremental:no /out:" example_exe " " example_obj " " var_obj " " js_data_obj " " js_common_obj);
+    await();
+    if (mtime(example_exe) < mtime(example_o, var_o, js_data_o, js_common_o)) {
+        run(link_example);
     }
 }
 
@@ -83,6 +91,6 @@ int main(int argc, char **argv) {
     } else {
         printf("Too many arguments\n");
     }
-    printf("Usage: %s [clean|-h|--help], default is debug\n", argv[0]);
+    printf("Usage: %s [clean|-h|--help]\n", argv[0]);
     return EXIT_FAILURE;
 }

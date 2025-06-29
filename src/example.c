@@ -60,9 +60,9 @@ static void _exception_handling() {
 }
 
 #define example_function_list \
-    X(_create_values)         \
-    X(_loop_without_gc)       \
-    X(_loop_with_gc)          \
+    X(_create_values) \
+    X(_loop_without_gc) \
+    X(_loop_with_gc) \
     X(_exception_handling)
 
 #define X(name) #name,

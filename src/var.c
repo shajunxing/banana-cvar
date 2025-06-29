@@ -46,14 +46,14 @@ void gc() {
 
 struct error_stack error_stack = {0};
 
-#define _proxy_js_result(__arg_expression)              \
-    do {                                                \
+#define _proxy_js_result(__arg_expression) \
+    do { \
         struct js_result __result = (__arg_expression); \
-        if (__result.success) {                         \
-            return __result.value;                      \
-        } else {                                        \
-            throw(__result.value);                      \
-        }                                               \
+        if (__result.success) { \
+            return __result.value; \
+        } else { \
+            throw(__result.value); \
+        } \
     } while (0)
 
 struct js_value add(struct js_value lhs, struct js_value rhs) {

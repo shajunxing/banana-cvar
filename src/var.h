@@ -47,10 +47,10 @@ struct record {
 
 extern struct record record;
 
-#define var(__arg_variable, __arg_expression)                \
-    struct js_value __arg_variable = (__arg_expression);     \
+#define var(__arg_variable, __arg_expression) \
+    struct js_value __arg_variable = (__arg_expression); \
     buffer_push(record.base, record.length, record.capacity, \
-                ((struct variable){.value = __arg_variable, .address = &__arg_variable}));
+        ((struct variable){.value = __arg_variable, .address = &__arg_variable}));
 
 extern struct js_value string(const char *);
 
@@ -70,30 +70,30 @@ struct error_stack {
 extern struct error_stack error_stack;
 
 #define try(__arg_try_statements, __arg_message_variable, __arg_catch_statements) \
-    do {                                                                          \
-        buffer_push(error_stack.base, error_stack.length,                         \
-                    error_stack.capacity, ((struct error_frame){0}));             \
-        struct error_frame *__stack_top =                                         \
-            error_stack.base + error_stack.length - 1;                            \
-        if (setjmp(__stack_top->buffer) == 0) {                                   \
-            __arg_try_statements;                                                 \
-            error_stack.length--;                                                 \
-        } else {                                                                  \
-            var(__arg_message_variable, __stack_top->message);                    \
-            error_stack.length--;                                                 \
-            __arg_catch_statements;                                               \
-        }                                                                         \
+    do { \
+        buffer_push(error_stack.base, error_stack.length, \
+            error_stack.capacity, ((struct error_frame){0})); \
+        struct error_frame *__stack_top = \
+            error_stack.base + error_stack.length - 1; \
+        if (setjmp(__stack_top->buffer) == 0) { \
+            __arg_try_statements; \
+            error_stack.length--; \
+        } else { \
+            var(__arg_message_variable, __stack_top->message); \
+            error_stack.length--; \
+            __arg_catch_statements; \
+        } \
     } while (0)
 
-#define throw(__arg_message)                                    \
-    do {                                                        \
-        if (error_stack.length == 0) {                          \
+#define throw(__arg_message) \
+    do { \
+        if (error_stack.length == 0) { \
             fatal("Statement 'throw' must inside 'try' block"); \
-        }                                                       \
-        struct error_frame *__stack_top =                       \
-            error_stack.base + error_stack.length - 1;          \
-        __stack_top->message = __arg_message;                   \
-        longjmp(__stack_top->buffer, 1);                        \
+        } \
+        struct error_frame *__stack_top = \
+            error_stack.base + error_stack.length - 1; \
+        __stack_top->message = __arg_message; \
+        longjmp(__stack_top->buffer, 1); \
     } while (0)
 
 extern struct js_value add(struct js_value, struct js_value);
